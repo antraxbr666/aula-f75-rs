@@ -481,6 +481,15 @@ src/
   closed by the compositor, not by us). "Quit" kills the child and exits the
   process (the SNI name dies with the D-Bus connection). ksni 0.3.7 blocking
   has no `wait()`; `daemon::run` idles on `handle.is_closed()`.
+- **Window app id**: `gui::APP_ID` = `"aula-f75-rs"` (`.with_app_id(...)` on
+  the root `ViewportBuilder`; egui-winit forwards it to
+  `winit::platform::wayland::WindowAttributesExtWayland::with_name`). Without
+  it the compositor reports the app id as unset. niri window rules target
+  `app-id="aula-f75-rs"`.
+- **Tray click**: `AulaTray::activate` (left click on the icon) is the same as
+  the menu **Show** — ksni's `MENU_ON_ACTIVATE` stays at its `false` default,
+  so the host sends `Activate` instead of popping the menu. Middle click
+  (`secondary_activate`) is intentionally unused.
 - Icon bytes are a
   pre-rendered 64x64 RGBA (`assets/icon-64.rgba`, straight alpha for egui,
   rotated to ARGB32 for ksni) — regenerate with `resvg --width 64 --height

@@ -68,6 +68,15 @@ impl ksni::Tray for AulaTray {
         vec![TRAY_ICON.clone()]
     }
 
+    /// Left click on the icon == menu "Show": open or focus the window.
+    /// (`MENU_ON_ACTIVATE` is left at its `false` default, so the host sends
+    /// `Activate` on a left click instead of popping the menu.)
+    fn activate(&mut self, _x: i32, _y: i32) {
+        if let Ok(mut daemon) = self.state.lock() {
+            daemon.show();
+        }
+    }
+
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::StandardItem;
         vec![

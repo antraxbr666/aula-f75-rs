@@ -1043,6 +1043,11 @@ fn selected_names(selected: &BTreeSet<u8>) -> String {
     }
 }
 
+/// Wayland `app_id` (xdg-shell) of the main window — matches the binary/repo
+/// name, so niri window rules can target `app-id="aula-f75-rs"`. Without it
+/// the compositor reports the app id as unset.
+pub const APP_ID: &str = "aula-f75-rs";
+
 pub fn run() -> anyhow::Result<()> {
     // The control socket doubles as the single-instance lock: a second GUI
     // just focuses the live window and exits.
@@ -1059,6 +1064,7 @@ pub fn run() -> anyhow::Result<()> {
         "aula-f75",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_app_id(APP_ID)
                 .with_inner_size([1010.0, 440.0])
                 .with_icon(tray::window_icon()),
             ..Default::default()

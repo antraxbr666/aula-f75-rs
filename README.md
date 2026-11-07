@@ -68,7 +68,9 @@ aula-f75 gui
 
 Navbar vertical de ícones à esquerda; cada aba abre no painel direito. O desenho do teclado no centro mostra a **camada custom** (editor) com as cores reais lidas do hardware.
 
-> 🖴 **Bandeja:** ícone residente (StatusNotifierItem; aparece no quickshell, waybar etc.) com menu **Show** (abre ou foca a janela) e **Quit** (encerra tudo). O ícone vive no daemon `aula-f75 tray`, que roda a janela como **processo filho** — fechar a janela (X, niri `Mod+C`) fecha **só a janela**, o ícone continua e **Show** traz ela de volta.
+> 🖴 **Bandeja:** ícone residente (StatusNotifierItem; aparece no quickshell, waybar etc.) com menu **Show** (abre ou foca a janela) e **Quit** (encerra tudo). **Clique esquerdo no ícone = Show.** O ícone vive no daemon `aula-f75 tray`, que roda a janela como **processo filho** — fechar a janela (X, niri `Mod+C`) fecha **só a janela**, o ícone continua e **Show** traz ela de volta.
+>
+> 🪟 **App ID** da janela: `aula-f75-rs` — use em window rules do niri, ex.: `match app-id="aula-f75-rs"`
 
 ```bash
 # residente no autostart (niri/quickshell/waybar): só o ícone, janela pelo menu
