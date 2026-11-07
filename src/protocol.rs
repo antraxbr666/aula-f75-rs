@@ -16,6 +16,8 @@ pub const PACKET_LEN: usize = 20;
 pub const PAYLOAD_MAX: usize = 14;
 
 /// Command bytes (read variant = write | 0x40).
+/// Constants not used yet belong to roadmap features (remap, macros, palettes).
+#[allow(dead_code)]
 pub mod cmd {
     pub const KEYMAP: u8 = 0x01; // 504 bytes, sub = layer (0 base, 1 Fn)
     pub const PER_KEY_RGB: u8 = 0x02; // 378 bytes, planar R[126] G[126] B[126]
