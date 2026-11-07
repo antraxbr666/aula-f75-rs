@@ -1,6 +1,7 @@
 //! aula-f75 — cross-platform configuration tool for the AULA F75 keyboard.
 
 mod device;
+mod factory;
 mod gui;
 mod keymap;
 mod live;
@@ -63,6 +64,9 @@ enum Command {
         /// 0 = base layer, 1 = Fn layer
         #[arg(default_value_t = 0)]
         layer: u8,
+        /// print the raw 504-byte block as hex (no assignments only)
+        #[arg(long)]
+        raw: bool,
         /// KEY=TARGET pairs, e.g. capslock=esc  f1=ctrl+shift+t
         #[arg(value_name = "KEY=TARGET")]
         assignments: Vec<String>,
@@ -258,17 +262,22 @@ fn main() -> Result<()> {
                 None => println!("battery: no reply"),
             }
         }
-        Command::Remap { layer, assignments } => {
+        Command::Remap { layer, raw, assignments } => {
             if layer > 3 {
                 bail!("layer must be 0-3 (0 = base, 1 = Fn)");
             }
             let kb = Keyboard::open(&api)?;
             let mut block = kb.read_keymap(layer)?;
             if assignments.is_empty() {
-                println!("keymap layer {layer}:");
-                for (idx, name) in remap::MATRIX {
-                    let e = &block[*idx as usize * 4..*idx as usize * 4 + 4];
-                    println!("  {:<10} {}", name, remap::entry_desc(e));
+                if raw {
+                    let hex: String = block.iter().map(|b| format!("{b:02x}")).collect();
+                    println!("{hex}");
+                } else {
+                    println!("keymap layer {layer}:");
+                    for (idx, name) in remap::MATRIX {
+                        let e = &block[*idx as usize * 4..*idx as usize * 4 + 4];
+                        println!("  {:<10} {}", name, remap::entry_desc(e));
+                    }
                 }
                 return Ok(());
             }

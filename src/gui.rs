@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Vec2, pos2};
 
 use crate::device::Keyboard;
+use crate::factory;
 use crate::keymap::{self, KEYS, PLANE};
 use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
@@ -30,6 +31,7 @@ enum Job {
     MacroSet { slot: usize, name: String, seq: String },
     MacroAssign { layer: u8, key: u8, macro_idx: u8, mode: u8 },
     MacroDel { slot: usize },
+    RestoreKeymaps,
 }
 
 enum Reply {
@@ -38,6 +40,7 @@ enum Reply {
         per_key: Vec<[u8; 3]>,
         battery: Option<u8>,
         device: String,
+        keymaps: [Vec<u8>; 2],
     },
     Done(String),
     Error(String),
@@ -64,7 +67,9 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
         let reply = match job {
             Job::Read => match open_kb(&mut api) {
                 Ok(kb) => match read_all(&kb) {
-                    Ok((led_block, per_key, battery, device)) => Reply::Read { led: led_block, per_key, battery, device },
+                    Ok((led_block, per_key, battery, device, keymaps)) => {
+                        Reply::Read { led: led_block, per_key, battery, device, keymaps }
+                    }
                     Err(e) => Reply::Error(format!("read failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
@@ -154,6 +159,16 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("delete failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
+            Job::RestoreKeymaps => match open_kb(&mut api) {
+                Ok(kb) => (|| -> anyhow::Result<String> {
+                    kb.write_keymap(&api, 0, &factory::BASE)?;
+                    kb.write_keymap(&api, 1, &factory::FN)?;
+                    Ok("factory keymaps restored".into())
+                })()
+                .map(Reply::Done)
+                .unwrap_or_else(|e| Reply::Error(format!("restore failed: {e:#}"))),
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
         };
         if tx.send(reply).is_err() {
             return; // GUI closed
@@ -161,7 +176,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
     }
 }
 
-fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>, String)> {
+fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>, String, [Vec<u8>; 2])> {
     let led_block = kb.read_led()?;
     let rgb = kb.read_block(cmd::PER_KEY_RGB, 0, PLANE * 3)?;
     let mut per_key = vec![[0u8; 3]; 90];
@@ -178,7 +193,8 @@ fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>,
         m.unwrap_or_default(),
         p.unwrap_or_default(),
     );
-    Ok((led_block, per_key, battery, device))
+    let keymaps = [kb.read_keymap(0)?, kb.read_keymap(1)?];
+    Ok((led_block, per_key, battery, device, keymaps))
 }
 
 fn apply_rgb(kb: &Keyboard, api: &hidapi::HidApi, per_key: &[[u8; 3]], set_effect_custom: bool) -> anyhow::Result<()> {
@@ -264,6 +280,9 @@ pub struct GuiApp {
     led: Option<Vec<u8>>,
     lighting: Lighting,
     per_key: Vec<[u8; 3]>,
+    /// Current keymap layers from the keyboard (base, Fn) — compared
+    /// against the factory baseline to list active remaps.
+    keymaps: Option<[Vec<u8>; 2]>,
     selected: BTreeSet<u8>,
     section: Section,
     // settings
@@ -297,6 +316,7 @@ impl Default for GuiApp {
             device: "—".into(),
             led: None,
             lighting: Lighting::default(),
+            keymaps: None,
             per_key: vec![[0, 0, 0]; 90],
             selected: BTreeSet::new(),
             section: Section::Lighting,
@@ -322,14 +342,37 @@ impl GuiApp {
         let _ = self.tx.send(job);
     }
 
+    /// True when the key's entry in `layer` differs from the factory
+    /// baseline (i.e. it carries an active remap).
+    fn is_remapped(&self, idx: u8, layer: u8) -> bool {
+        let Some(km) = &self.keymaps else { return false };
+        let o = idx as usize * 4;
+        let fac: &[u8; 504] = if layer == 0 { &factory::BASE } else { &factory::FN };
+        km[layer as usize].get(o..o + 4) != Some(&fac[o..o + 4])
+    }
+
+    /// All active remaps: (layer, key index) pairs differing from factory.
+    fn active_remaps(&self) -> Vec<(u8, u8)> {
+        let mut out = Vec::new();
+        for layer in 0u8..2 {
+            for idx in 0u8..126 {
+                if self.is_remapped(idx, layer) {
+                    out.push((layer, idx));
+                }
+            }
+        }
+        out
+    }
+
     fn poll(&mut self, ctx: &egui::Context) {
         while let Ok(reply) = self.rx.try_recv() {
             self.pending = false;
             match reply {
-                Reply::Read { led: led_block, per_key, battery, device } => {
+                Reply::Read { led: led_block, per_key, battery, device, keymaps } => {
                     self.connected = true;
                     self.battery = battery;
                     self.device = device;
+                    self.keymaps = Some(keymaps);
                     let effect = led_block[led::ACTIVE_EFFECT];
                     self.lighting.effect = if EFFECTS.iter().any(|(n, _)| *n == effect) { effect } else { 1 };
                     let hw = effect.max(1) as usize;
@@ -483,6 +526,33 @@ impl GuiApp {
         }
         ui.add_space(6.0);
         ui.small(format!("selected: {}", selected_names(&self.selected)));
+
+        // active remaps: entries that differ from the factory baseline
+        ui.add_space(10.0);
+        ui.separator();
+        let remaps = self.active_remaps();
+        ui.strong(format!("Active remaps ({})", remaps.len()));
+        if remaps.is_empty() {
+            ui.small("none — keyboard is at factory state");
+        } else {
+            egui::Grid::new("active_remaps").num_columns(3).spacing([12.0, 2.0]).show(ui, |ui| {
+                for (layer, idx) in &remaps {
+                    let Some(km) = &self.keymaps else { break };
+                    let o = *idx as usize * 4;
+                    let e = &km[*layer as usize][o..o + 4];
+                    ui.small(if *layer == 0 { "base" } else { "Fn" });
+                    ui.small(remap::matrix_name(*idx).unwrap_or("?"));
+                    ui.small(remap::entry_desc(e));
+                    ui.end_row();
+                }
+            });
+            ui.add_space(4.0);
+            if ui.button("undo all (restore factory keymaps)").clicked() && !self.pending {
+                self.pending = true;
+                self.status = "restoring factory keymaps…".into();
+                self.send(Job::RestoreKeymaps);
+            }
+        }
     }
 
     fn ui_macros(&mut self, ui: &mut egui::Ui) {
@@ -700,6 +770,9 @@ impl eframe::App for GuiApp {
                 let fill = Color32::from_rgb(r, g, b);
                 let stroke = if self.selected.contains(&key.led) {
                     Stroke::new(2.5_f32, Color32::WHITE)
+                } else if self.is_remapped(key.led, self.remap_layer) {
+                    // active remap in the layer being edited
+                    Stroke::new(1.6_f32, Color32::from_rgb(255, 140, 0))
                 } else {
                     Stroke::new(1.0_f32, Color32::from_gray(70))
                 };
