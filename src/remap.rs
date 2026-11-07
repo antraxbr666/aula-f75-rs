@@ -105,10 +105,7 @@ pub const MATRIX: &[(u8, &str)] = &[
 
 #[allow(dead_code)] // used by the GUI remap panel
 pub fn matrix_name(index: u8) -> Option<&'static str> {
-    MATRIX
-        .iter()
-        .find(|(i, _)| *i == index)
-        .map(|(_, n)| *n)
+    MATRIX.iter().find(|(i, _)| *i == index).map(|(_, n)| *n)
 }
 
 pub fn matrix_index(name: &str) -> Option<u8> {
@@ -302,7 +299,9 @@ const CONSUMERS: &[(u16, &str)] = &[
 
 /// Human-readable description of one keymap entry (4 bytes).
 pub fn entry_desc(e: &[u8]) -> String {
-    let &[ty, b1, b2, b3] = e else { return String::new() };
+    let &[ty, b1, b2, b3] = e else {
+        return String::new();
+    };
     match ty {
         0x00 => {
             if e[1..].iter().all(|&b| b == 0) {

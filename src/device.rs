@@ -58,14 +58,24 @@ impl Keyboard {
                         let dev = api
                             .open_path(info.path())
                             .context("failed to open device")?;
-                        return Ok(Keyboard { dev, name, vid, pid });
+                        return Ok(Keyboard {
+                            dev,
+                            name,
+                            vid,
+                            pid,
+                        });
                     }
                     fallback.get_or_insert(info.path().to_owned());
                 }
             }
             if let Some(path) = fallback {
                 let dev = api.open_path(&path).context("failed to open device")?;
-                return Ok(Keyboard { dev, name, vid, pid });
+                return Ok(Keyboard {
+                    dev,
+                    name,
+                    vid,
+                    pid,
+                });
             }
         }
         bail!("no AULA F75 found via 2.4G dongle or Bluetooth (wired mode is not supported yet)")
@@ -155,7 +165,10 @@ impl Keyboard {
             while let Some(pkt) = self.read_packet()? {
                 let Some(&count) = pkt.get(2) else { continue };
                 if count & 0x80 != 0 {
-                    bail!("keyboard reported error for read 0x{:02X}", cmd::read(write_cmd));
+                    bail!(
+                        "keyboard reported error for read 0x{:02X}",
+                        cmd::read(write_cmd)
+                    );
                 }
                 let Some(&idx) = pkt.get(3) else { continue };
                 let Some(&len) = pkt.get(4) else { continue };
@@ -181,7 +194,10 @@ impl Keyboard {
             .filter(|(_, h)| !**h)
             .map(|(i, _)| i)
             .collect();
-        bail!("read 0x{:02X} incomplete, missing packets {missing:?}", cmd::read(write_cmd))
+        bail!(
+            "read 0x{:02X} incomplete, missing packets {missing:?}",
+            cmd::read(write_cmd)
+        )
     }
 
     /// Vendor/product id of the open transport.
@@ -285,7 +301,10 @@ impl Keyboard {
                     && i.usage_page() == 0x0001
                     && i.usage() == 0x06
             })
-            .map(|i| api.open_path(i.path()).context("failed to open keyboard collection"));
+            .map(|i| {
+                api.open_path(i.path())
+                    .context("failed to open keyboard collection")
+            });
         let Some(kbd) = kbd else {
             eprintln!("warning: keyboard collection not found, skipping idle check");
             return Ok(());

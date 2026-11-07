@@ -154,7 +154,11 @@ pub fn frame(anim: &Anim, t_ms: u64) -> (u8, Vec<u8>) {
                 .map(|r| {
                     let heat = (1.0 - r as f32 / n) * (0.65 + 0.35 * noise(&mut seed));
                     let heat = heat.clamp(0.05, 1.0);
-                    [(255.0 * heat) as u8, (110.0 * heat * heat) as u8, (18.0 * heat * heat) as u8]
+                    [
+                        (255.0 * heat) as u8,
+                        (110.0 * heat * heat) as u8,
+                        (18.0 * heat * heat) as u8,
+                    ]
                 })
                 .collect();
             (realtime::SUB_GROUPS, groups_payload(&colors, &bands))
@@ -164,7 +168,12 @@ pub fn frame(anim: &Anim, t_ms: u64) -> (u8, Vec<u8>) {
 
 /// Stream an animation for `seconds`, switching the board to the custom
 /// effect first (real-time frames were verified with it active).
-pub fn play(kb: &crate::device::Keyboard, api: &hidapi::HidApi, anim: &Anim, seconds: u64) -> anyhow::Result<u32> {
+pub fn play(
+    kb: &crate::device::Keyboard,
+    api: &hidapi::HidApi,
+    anim: &Anim,
+    seconds: u64,
+) -> anyhow::Result<u32> {
     use anyhow::Context;
 
     // real-time frames override whatever is showing, but only the custom

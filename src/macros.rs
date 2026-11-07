@@ -70,7 +70,12 @@ impl Event {
             5 => format!("wheel {code}"),
             k => format!("kind {k} code {code:02X}"),
         };
-        format!("{}{} (+{}ms)", if self.press { "" } else { "^" }, what, self.delay_ms)
+        format!(
+            "{}{} (+{}ms)",
+            if self.press { "" } else { "^" },
+            what,
+            self.delay_ms
+        )
     }
 }
 
@@ -114,7 +119,10 @@ impl Store {
             let addr = u16::from_le_bytes([block[off], block[off + 1]]) as usize;
             let size = u16::from_le_bytes([block[off + 2], block[off + 3]]) as usize;
             if addr == 0 || size == 0 || addr + size > block.len() {
-                macros.push(Macro { name: String::new(), events: Vec::new() });
+                macros.push(Macro {
+                    name: String::new(),
+                    events: Vec::new(),
+                });
                 continue;
             }
             let data = &block[addr..addr + size];
@@ -140,10 +148,8 @@ impl Store {
             if offset < FORBIDDEN.end && offset + data.len() > FORBIDDEN.start {
                 offset = DODGE_TO;
             }
-            block[i * 4..i * 4 + 2]
-                .copy_from_slice(&(offset as u16).to_le_bytes());
-            block[i * 4 + 2..i * 4 + 4]
-                .copy_from_slice(&(data.len() as u16).to_le_bytes());
+            block[i * 4..i * 4 + 2].copy_from_slice(&(offset as u16).to_le_bytes());
+            block[i * 4 + 2..i * 4 + 4].copy_from_slice(&(data.len() as u16).to_le_bytes());
             block[offset..offset + data.len()].copy_from_slice(&data);
             offset += data.len();
         }
@@ -152,7 +158,10 @@ impl Store {
 
     pub fn set(&mut self, index: usize, m: Macro) {
         while self.macros.len() <= index {
-            self.macros.push(Macro { name: String::new(), events: Vec::new() });
+            self.macros.push(Macro {
+                name: String::new(),
+                events: Vec::new(),
+            });
         }
         self.macros[index] = m;
     }
@@ -229,20 +238,47 @@ pub fn parse_sequence(seq: &str) -> Result<Vec<Event>, String> {
         if keys.is_empty() {
             // modifier-only token: press (or release with ^) the modifiers
             for &mu in &mods {
-                events.push(Event { kind: 1, code: mu, delay_ms: DEFAULT_DELAY_MS, press: !hold_prefix });
+                events.push(Event {
+                    kind: 1,
+                    code: mu,
+                    delay_ms: DEFAULT_DELAY_MS,
+                    press: !hold_prefix,
+                });
             }
             continue;
         }
         if keys.len() > 1 {
-            return Err(format!("'{tok}': only one main key per token (use two tokens)"));
+            return Err(format!(
+                "'{tok}': only one main key per token (use two tokens)"
+            ));
         }
         for &mu in &mods {
-            events.push(Event { kind: 1, code: mu, delay_ms: 0, press: true });
+            events.push(Event {
+                kind: 1,
+                code: mu,
+                delay_ms: 0,
+                press: true,
+            });
         }
-        events.push(Event { kind: 0, code: keys[0], delay_ms: DEFAULT_DELAY_MS, press: true });
-        events.push(Event { kind: 0, code: keys[0], delay_ms: DEFAULT_DELAY_MS, press: false });
+        events.push(Event {
+            kind: 0,
+            code: keys[0],
+            delay_ms: DEFAULT_DELAY_MS,
+            press: true,
+        });
+        events.push(Event {
+            kind: 0,
+            code: keys[0],
+            delay_ms: DEFAULT_DELAY_MS,
+            press: false,
+        });
         for &mu in mods.iter().rev() {
-            events.push(Event { kind: 1, code: mu, delay_ms: DEFAULT_DELAY_MS, press: false });
+            events.push(Event {
+                kind: 1,
+                code: mu,
+                delay_ms: DEFAULT_DELAY_MS,
+                press: false,
+            });
         }
     }
     Ok(events)
