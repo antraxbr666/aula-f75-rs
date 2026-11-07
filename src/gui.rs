@@ -17,7 +17,7 @@ use crate::keymap::{self, KEYS, PLANE};
 use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
-use crate::{live, macros, remap};
+use crate::{macros, remap};
 
 /// ---- worker (device IO) ----
 
@@ -30,7 +30,6 @@ enum Job {
     MacroSet { slot: usize, name: String, seq: String },
     MacroAssign { layer: u8, key: u8, macro_idx: u8, mode: u8 },
     MacroDel { slot: usize },
-    Live { anim: live::Anim, seconds: u64 },
 }
 
 enum Reply {
@@ -155,13 +154,6 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("delete failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::Live { anim, seconds } => match open_kb(&mut api) {
-                Ok(kb) => match live::play(&kb, &api, &anim, seconds) {
-                    Ok(n) => Reply::Done(format!("live '{}' done: {n} frames", anim.name())),
-                    Err(e) => Reply::Error(format!("live failed: {e:#}")),
-                },
-                Err(e) => Reply::Error(format!("no device: {e:#}")),
-            },
         };
         if tx.send(reply).is_err() {
             return; // GUI closed
@@ -215,7 +207,6 @@ enum Section {
     Lighting,
     Remap,
     Macros,
-    Live,
     Themes,
     Settings,
     Device,
@@ -227,7 +218,6 @@ impl Section {
             Section::Lighting => "💡",
             Section::Remap => "⌨",
             Section::Macros => "⏺",
-            Section::Live => "🎵",
             Section::Themes => "🌈",
             Section::Settings => "⚙",
             Section::Device => "ℹ",
@@ -239,18 +229,16 @@ impl Section {
             Section::Lighting => "Lighting",
             Section::Remap => "Remap",
             Section::Macros => "Macros",
-            Section::Live => "Live",
             Section::Themes => "Themes",
             Section::Settings => "Settings",
             Section::Device => "Device",
         }
     }
 
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 6] = [
         Section::Lighting,
         Section::Remap,
         Section::Macros,
-        Section::Live,
         Section::Themes,
         Section::Settings,
         Section::Device,
@@ -277,22 +265,19 @@ pub struct GuiApp {
     lighting: Lighting,
     per_key: Vec<[u8; 3]>,
     selected: BTreeSet<u8>,
-    paint: [u8; 3],
     section: Section,
     // settings
     sleep_on: bool,
     sleep_secs: u16,
     debounce: u8,
     confirm_reset: bool,
-    // remap / macros / live
+    // remap / macros
     remap_layer: u8,
     remap_target: String,
     macro_slot: usize,
     macro_name: String,
     macro_seq: String,
     macro_mode: u8,
-    live_anim: usize,
-    live_secs: u64,
     // periodic refresh
     last_refresh: Instant,
 }
@@ -314,7 +299,6 @@ impl Default for GuiApp {
             lighting: Lighting::default(),
             per_key: vec![[0, 0, 0]; 90],
             selected: BTreeSet::new(),
-            paint: [255, 0, 0],
             section: Section::Lighting,
             sleep_on: false,
             sleep_secs: 300,
@@ -326,8 +310,6 @@ impl Default for GuiApp {
             macro_name: String::new(),
             macro_seq: String::new(),
             macro_mode: 1,
-            live_anim: 0,
-            live_secs: 10,
             last_refresh: Instant::now(),
         };
         app.send(Job::Read);
@@ -565,58 +547,6 @@ impl GuiApp {
         }
     }
 
-    fn ui_live(&mut self, ui: &mut egui::Ui) {
-        ui.heading("🎵 Live");
-        ui.label("Stream animation frames to the keyboard in real time.");
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt("live-anim")
-                .selected_text(
-                    ["rainbow", "wave", "fire", "solid"]
-                        .get(self.live_anim)
-                        .copied()
-                        .unwrap_or("rainbow")
-                        .to_string(),
-                )
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.live_anim, 0usize, "rainbow");
-                    ui.selectable_value(&mut self.live_anim, 1usize, "wave");
-                    ui.selectable_value(&mut self.live_anim, 2usize, "fire");
-                    ui.selectable_value(&mut self.live_anim, 3usize, "solid");
-                });
-            if self.live_anim == 3 {
-                // color for the solid animation (lived in the removed
-                // Per-key section; now shown only when it is relevant)
-                let mut c = [
-                    self.paint[0] as f32 / 255.0,
-                    self.paint[1] as f32 / 255.0,
-                    self.paint[2] as f32 / 255.0,
-                ];
-                ui.color_edit_button_rgb(&mut c);
-                self.paint = [
-                    (c[0] * 255.0) as u8,
-                    (c[1] * 255.0) as u8,
-                    (c[2] * 255.0) as u8,
-                ];
-            }
-            ui.add(egui::DragValue::new(&mut self.live_secs).range(3..=60).suffix(" s"));
-        });
-        if ui
-            .add_enabled(!self.pending, egui::Button::new("▶ play on keyboard"))
-            .clicked()
-        {
-            let anim = match self.live_anim {
-                1 => live::Anim::Wave,
-                2 => live::Anim::Fire,
-                3 => live::Anim::Solid(self.paint),
-                _ => live::Anim::Rainbow,
-            };
-            self.pending = true;
-            self.status = format!("streaming {}…", anim.name());
-            self.send(Job::Live { anim, seconds: self.live_secs });
-        }
-    }
-
     fn ui_themes(&mut self, ui: &mut egui::Ui) {
         ui.heading("🌈 Themes");
         ui.small("Themes paint the custom layer; applying switches the keyboard to it.");
@@ -745,7 +675,6 @@ impl eframe::App for GuiApp {
                     Section::Lighting => self.ui_lighting(ui),
                     Section::Remap => self.ui_remap(ui),
                     Section::Macros => self.ui_macros(ui),
-                    Section::Live => self.ui_live(ui),
                     Section::Themes => self.ui_themes(ui),
                     Section::Settings => self.ui_settings(ui),
                     Section::Device => self.ui_device(ui),
