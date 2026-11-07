@@ -22,6 +22,7 @@
 | 🔋 | **Bateria**, sleep, debounce, win-lock, factory reset — tudo pela GUI |
 | 🧵 | Toda IO HID em *thread* própria — **a interface nunca trava** |
 | 🐧 | **Linux** com regra udev incluída (sem sudo) |
+| 🌿 | Tema **Catppuccin Mocha** ([catppuccin/egui](https://github.com/catppuccin/egui)) |
 
 ---
 

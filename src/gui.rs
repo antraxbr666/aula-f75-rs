@@ -455,6 +455,10 @@ impl GuiApp {
     /// `listener` is the control socket bound by `run()`: the tray daemon uses
     /// it to focus an already-open window instead of launching a second one.
     fn new(cc: &eframe::CreationContext, listener: std::os::unix::net::UnixListener) -> Self {
+        // Catppuccin Mocha (catppuccin/egui) — the whole app runs on this
+        // palette; widget colors come from the theme, not from defaults.
+        catppuccin_egui::set_theme(&cc.egui_ctx, catppuccin_egui::MOCHA);
+
         let ctx = cc.egui_ctx.clone();
         ipc::watch(listener, move |msg| {
             if msg == ipc::TOGGLE {

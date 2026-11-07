@@ -494,6 +494,15 @@ src/
   sends `Activate` instead of popping the menu; `secondary_activate` (middle
   click) is unused. Do not make `toggle` depend on focus state: the simple
   "alive = close" rule is the owner's choice.
+- **Visuals**: the whole window uses **Catppuccin Mocha** via
+  `catppuccin-egui` (`src/gui.rs`, `GuiApp::new`:
+  `catppuccin_egui::set_theme(&cc.egui_ctx, catppuccin_egui::MOCHA)`). The
+  crate gates each egui version behind a feature flag: `Cargo.toml` pins
+  `default-features = false, features = ["egui29"]` — **when bumping
+  eframe/egui, bump that feature** (`egui30`, `egui31`, …) or the theme link
+  fails to compile. Colors still hardcoded in the drawing (orange remap
+  stroke, white selection, key legends) are intentional; Mocha base is
+  `#1e1e2e`, surface0 `#313244`.
 - Icon bytes are a
   pre-rendered 64x64 RGBA (`assets/icon-64.rgba`, straight alpha for egui,
   rotated to ARGB32 for ksni) — regenerate with `resvg --width 64 --height
