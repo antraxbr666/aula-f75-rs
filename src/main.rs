@@ -55,9 +55,13 @@ enum Command {
     Selftest,
     /// Launch the graphical interface
     Gui,
-    /// Stay resident in the tray; the window is a child process (close-to-tray)
+    /// Stay resident in the tray; the window is a child process (close-to-tray).
+    /// Use it for compositor/panel autostart: the icon shows up at login and
+    /// the window opens from the tray menu.
     Tray {
-        /// Do not open the window on startup (tray only)
+        /// Start with the tray icon only (no window) — the usual choice for
+        /// niri/quickshell/waybar autostart; open the window later via the
+        /// tray menu "Show"
         #[arg(long)]
         no_window: bool,
     },

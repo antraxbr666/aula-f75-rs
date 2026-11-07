@@ -71,9 +71,15 @@ Navbar vertical de ícones à esquerda; cada aba abre no painel direito. O desen
 > 🖴 **Bandeja:** ícone residente (StatusNotifierItem; aparece no quickshell, waybar etc.) com menu **Show** (abre ou foca a janela) e **Quit** (encerra tudo). O ícone vive no daemon `aula-f75 tray`, que roda a janela como **processo filho** — fechar a janela (X, niri `Mod+C`) fecha **só a janela**, o ícone continua e **Show** traz ela de volta.
 
 ```bash
-# residente: abre a janela e mantém o ícone depois que ela fecha
-niri: spawn-at-startup "aula-f75" "tray"
-aula-f75 tray --no-window   # só o ícone, a janela abre pelo menu Show
+# residente no autostart (niri/quickshell/waybar): só o ícone, janela pelo menu
+aula-f75 tray --no-window
+# com janela já no startup
+aula-f75 tray
+```
+
+```kdl
+// ~/.config/niri/config.kdl
+spawn-at-startup "aula-f75" "tray" "--no-window"
 ```
 
 | Ícone | Aba | O que faz |

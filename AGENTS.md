@@ -548,11 +548,12 @@ aula-f75 live rainbow 10               # stream animation ~14 fps
 aula-f75 live '#ff0000'                # solid color (quote # in shells)
 aula-f75 gui                          # window only (no tray); 2nd run just focuses
 aula-f75 tray                         # resident tray + window (close-to-tray)
-aula-f75 tray --no-window             # resident tray, window opens from "Show"
+aula-f75 tray --no-window             # resident tray only (autostart); window via "Show"
 ```
 
-Tray workflow on niri: `spawn-at-startup "aula-f75" "tray"` in
-`~/.config/niri/config.kdl`, then `Mod+C` (`close-window`) closes the window
+Tray workflow: autostart with the **icon only** (`aula-f75 tray --no-window`,
+e.g. `spawn-at-startup "aula-f75" "tray" "--no-window"` in
+`~/.config/niri/config.kdl`); then `Mod+C` (`close-window`) closes the window
 and leaves the icon; menu **Show** reopens it, **Quit** kills both.
 
 Safe test cycle for keymap work (always restore!):
