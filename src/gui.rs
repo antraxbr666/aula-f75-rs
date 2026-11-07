@@ -45,43 +45,52 @@ enum Reply {
 }
 
 fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
-    let api = match hidapi::HidApi::new() {
+    let mut api = match hidapi::HidApi::new() {
         Ok(a) => a,
         Err(e) => {
             let _ = tx.send(Reply::Error(format!("HID init failed: {e}")));
             return;
         }
     };
+
+    /// Re-enumerate before opening: the keyboard re-enumerates after a
+    /// factory reset / power cycle / replug, and a stale device list would
+    /// keep opening dead paths (reads then time out).
+    fn open_kb(api: &mut hidapi::HidApi) -> anyhow::Result<Keyboard> {
+        let _ = api.refresh_devices();
+        Keyboard::open(api)
+    }
+
     while let Ok(job) = rx.recv() {
         let reply = match job {
-            Job::Read => match Keyboard::open(&api) {
+            Job::Read => match open_kb(&mut api) {
                 Ok(kb) => match read_all(&kb) {
                     Ok((led_block, per_key, battery, device)) => Reply::Read { led: led_block, per_key, battery, device },
                     Err(e) => Reply::Error(format!("read failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::ApplyLed(block) => match Keyboard::open(&api) {
+            Job::ApplyLed(block) => match open_kb(&mut api) {
                 Ok(kb) => match kb.wait_keys_idle(&api).and_then(|()| kb.write_led(&block)) {
                     Ok(()) => Reply::Done("lighting applied".into()),
                     Err(e) => Reply::Error(format!("write failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::ApplyRgb { per_key, set_effect_custom } => match Keyboard::open(&api) {
+            Job::ApplyRgb { per_key, set_effect_custom } => match open_kb(&mut api) {
                 Ok(kb) => apply_rgb(&kb, &api, &per_key, set_effect_custom)
                     .map(|()| Reply::Done("per-key colors applied".into()))
                     .unwrap_or_else(|e| Reply::Error(format!("write failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::FactoryReset => match Keyboard::open(&api) {
+            Job::FactoryReset => match open_kb(&mut api) {
                 Ok(kb) => match kb.factory_reset(&api) {
                     Ok(()) => Reply::Done("factory reset sent (keyboard will reboot)".into()),
                     Err(e) => Reply::Error(format!("reset failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::Remap { layer, index, entry } => match Keyboard::open(&api) {
+            Job::Remap { layer, index, entry } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<String> {
                     let mut block = kb.read_keymap(layer)?;
                     block[index as usize * 4..index as usize * 4 + 4].copy_from_slice(&entry);
@@ -96,7 +105,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("remap failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::MacroSet { slot, name, seq } => match Keyboard::open(&api) {
+            Job::MacroSet { slot, name, seq } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<String> {
                     if !name.is_ascii() || name.len() > 32 {
                         anyhow::bail!("macro name must be ASCII, max 32 bytes");
@@ -111,7 +120,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("macro save failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::MacroAssign { layer, key, macro_idx, mode } => match Keyboard::open(&api) {
+            Job::MacroAssign { layer, key, macro_idx, mode } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<String> {
                     let store = macros::Store::parse(&kb.read_macros()?);
                     match store.macros.get(macro_idx as usize) {
@@ -132,7 +141,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("assign failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::MacroDel { slot } => match Keyboard::open(&api) {
+            Job::MacroDel { slot } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<String> {
                     let mut store = macros::Store::parse(&kb.read_macros()?);
                     if slot >= store.macros.len() {
@@ -146,7 +155,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("delete failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::Live { anim, seconds } => match Keyboard::open(&api) {
+            Job::Live { anim, seconds } => match open_kb(&mut api) {
                 Ok(kb) => match live::play(&kb, &api, &anim, seconds) {
                     Ok(n) => Reply::Done(format!("live '{}' done: {n} frames", anim.name())),
                     Err(e) => Reply::Error(format!("live failed: {e:#}")),
@@ -270,9 +279,6 @@ pub struct GuiApp {
     device: String,
     led: Option<Vec<u8>>,
     lighting: Lighting,
-    /// Effect currently active on the keyboard (from the LED block) — the
-    /// board drawing is only truthful when this is 32 (custom per-key).
-    active_effect: u8,
     per_key: Vec<[u8; 3]>,
     selected: BTreeSet<u8>,
     paint: [u8; 3],
@@ -310,7 +316,6 @@ impl Default for GuiApp {
             device: "—".into(),
             led: None,
             lighting: Lighting::default(),
-            active_effect: 1,
             per_key: vec![[0, 0, 0]; 90],
             selected: BTreeSet::new(),
             paint: [255, 0, 0],
@@ -348,7 +353,6 @@ impl GuiApp {
                     self.battery = battery;
                     self.device = device;
                     let effect = led_block[led::ACTIVE_EFFECT];
-                    self.active_effect = effect;
                     self.lighting.effect = if EFFECTS.iter().any(|(n, _)| *n == effect) { effect } else { 1 };
                     let hw = effect.max(1) as usize;
                     if hw <= 34 {
@@ -604,6 +608,7 @@ impl GuiApp {
 
     fn ui_per_key(&mut self, ui: &mut egui::Ui) {
         ui.heading("🎨 Per-key");
+        ui.small("Board = your custom layer. Applying switches the keyboard to it.");
         let mut c = [
             self.paint[0] as f32 / 255.0,
             self.paint[1] as f32 / 255.0,
@@ -641,7 +646,7 @@ impl GuiApp {
         ui.add_space(8.0);
         if ui.button("⚫ all off").clicked() && !self.pending {
             self.per_key = vec![[0, 0, 0]; 90];
-            self.apply_rgb(false);
+            self.apply_rgb(true);
         }
     }
 
@@ -696,8 +701,15 @@ impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
 
-        // keep battery/status fresh even when idle
-        if !self.pending && self.last_refresh.elapsed() >= Duration::from_secs(60) {
+        // keep battery/status fresh; when disconnected, retry every 5 s
+        // (the keyboard takes a few seconds to come back after a factory
+        // reset reboot or a replug) instead of every 60 s
+        let retry_every = if self.connected {
+            Duration::from_secs(60)
+        } else {
+            Duration::from_secs(5)
+        };
+        if !self.pending && self.last_refresh.elapsed() >= retry_every {
             self.last_refresh = Instant::now();
             self.pending = true;
             self.send(Job::Read);
@@ -765,46 +777,20 @@ impl eframe::App for GuiApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The 0x02 table only drives the CUSTOM effect; firmware effects
-            // are generated inside the keyboard and are not in that table.
-            if self.active_effect != 32 {
-                ui.horizontal_wrapped(|ui| {
-                    ui.colored_label(
-                        Color32::from_rgb(255, 170, 0),
-                        format!(
-                            "⚡ active effect: {} — rendered by the keyboard itself; the board below shows the per-key CUSTOM table (dimmed)",
-                            effect_label(self.active_effect)
-                        ),
-                    );
-                    if ui
-                        .add_enabled(!self.pending, egui::Button::new("switch to custom"))
-                        .clicked()
-                    {
-                        if let Some(block) = self.led.clone() {
-                            let mut b = block;
-                            b[led::ACTIVE_EFFECT] = 32;
-                            self.pending = true;
-                            self.status = "switching to custom…".into();
-                            self.send(Job::ApplyLed(b));
-                        }
-                    }
-                });
-                ui.add_space(4.0);
-            }
+            // The board is an EDITOR for the per-key custom layer, not a
+            // mirror of the keyboard: firmware effects (1-31) are computed
+            // inside the keyboard and cannot be read back. Painting keys or
+            // applying a theme below auto-switches the keyboard to custom,
+            // so no banner/button is needed here.
             let (resp, painter) = ui.allocate_painter(Vec2::new(670.0, 290.0), Sense::click());
             let origin = resp.rect.min;
-            let dim = if self.active_effect == 32 { 1.0 } else { 0.35 };
             for key in KEYS {
                 let rect = Rect::from_min_size(
                     pos2(origin.x + key.x as f32, origin.y + key.y as f32),
                     Vec2::new(36.0, 27.0),
                 );
                 let [r, g, b] = self.per_key[key.led as usize];
-                let fill = Color32::from_rgb(
-                    (r as f32 * dim) as u8,
-                    (g as f32 * dim) as u8,
-                    (b as f32 * dim) as u8,
-                );
+                let fill = Color32::from_rgb(r, g, b);
                 let stroke = if self.selected.contains(&key.led) {
                     Stroke::new(2.5_f32, Color32::WHITE)
                 } else {
