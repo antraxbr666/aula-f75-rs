@@ -217,13 +217,13 @@ impl Section {
     fn icon(self) -> &'static str {
         match self {
             Section::Lighting => "💡",
-            Section::Remap => "⌨️",
+            Section::Remap => "⌨",
             Section::Macros => "⏺",
             Section::Live => "🎵",
             Section::PerKey => "🎨",
             Section::Themes => "🌈",
-            Section::Settings => "⚙️",
-            Section::Device => "ℹ️",
+            Section::Settings => "⚙",
+            Section::Device => "ℹ",
         }
     }
 
@@ -446,7 +446,7 @@ impl GuiApp {
                 }
             });
         ui.add_space(6.0);
-        ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀️ brightness"));
+        ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀ brightness"));
         ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
         egui::ComboBox::from_id_salt("color")
             .selected_text(format!("🎨 {}", COLORS[(self.lighting.color as usize).min(7)].1))
@@ -462,7 +462,7 @@ impl GuiApp {
     }
 
     fn ui_remap(&mut self, ui: &mut egui::Ui) {
-        ui.heading("⌨️ Remap");
+        ui.heading("⌨ Remap");
         ui.label("Select keys on the board, then set what they do.");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -641,7 +641,7 @@ impl GuiApp {
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
-        ui.heading("⚙️ Settings");
+        ui.heading("⚙ Settings");
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.sleep_on, "💤 Sleep");
             egui::ComboBox::from_id_salt("sleep")
@@ -680,7 +680,7 @@ impl GuiApp {
     }
 
     fn ui_device(&mut self, ui: &mut egui::Ui) {
-        ui.heading("ℹ️ Device");
+        ui.heading("ℹ Device");
         ui.small(self.device.clone());
         ui.add_space(4.0);
         ui.small("Firmware: not exposed over the 2.4G dongle");
@@ -705,7 +705,7 @@ impl eframe::App for GuiApp {
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("⌨️ AULA F75");
+                ui.heading("⌨ AULA F75");
                 ui.separator();
                 let dot = if self.connected { "🟢" } else { "🔴" };
                 ui.label(format!("{dot} {}", self.status));
