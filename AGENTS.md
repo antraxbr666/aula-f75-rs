@@ -430,6 +430,7 @@ src/
   live.rs      Anim::{Rainbow,Wave,Fire,Solid}, band construction, play()
   factory.rs   factory BASE/FN keymap constants (see §6.6!)
   gui.rs       egui app: worker thread + mpsc jobs, sections, board drawing
+  fonts.rs     CaskaydiaCove Nerd Font embedded (primary family + text sizes)
   tray.rs      ksni SNI tray: Show/Quit menu, embedded icon (daemon side)
   daemon.rs    `aula-f75 tray`: supervises the GUI child + reaper thread
   ipc.rs       unix control socket (focus / single-instance lock)
@@ -509,15 +510,30 @@ src/
   64 assets/icon.svg /tmp/icon.png && magick /tmp/icon.png -depth 8
   rgba:assets/icon-64.rgba`.
 
-### 10.2 egui font gotchas (caused real bugs)
+### 10.2 Fonts and text sizes (read before writing UI strings)
 
-The default egui font lacks many glyphs. NEVER use in any UI string:
+The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
+(`assets/CaskaydiaCoveNerdFontMono-Regular.ttf`, ~2.9 MB, `fonts::install`):
 
-- **U+FE0F variation selectors** (emoji + FE0F) → tofu square
-- **Arrow glyphs U+2190-2193** (and similar U+21xx) → tofu; use ASCII
-  `up/dn/lt/rt`
-- Emojis render monochrome — fine, but keep the two rules above. If a label
-  shows a box, the fix is ASCII.
+- It is the **primary** family for both `Proportional` and `Monospace`; the
+  fonts bundled with egui stay behind it as fallback, so emoji and any glyph
+  Cascadia lacks still render.
+- Text sizes: `Small` 11, **Body/Button/Monospace 14**, `Heading` 20 — egui's
+defaults were 9/12.5/18/12 and were too small on the owner's display.
+- Because of the Nerd Font, these now render (used by the icon navbar):
+  `\u{F0EB}` bulb, `\u{F11C}` keyboard, `\u{F022}` list, `\u{F1FC}` brush,
+  `\u{F013}` gear, `\u{F05A}` info, `\u{F021}` refresh, `\u{F241}` battery,
+  `\u{F060}..\u{F063}` arrows.
+- **Unicode arrows `U+2190-2193` are fine now** (Cascadia has them) — the old
+  "use ASCII up/dn/lt/rt" rule applied to egui's default font and no longer
+  needs to be followed.
+- **U+FE0F (emoji variation selector) is still forbidden**: no font here
+  handles it, so `emoji + FE0F` keeps producing a tofu square.
+- Emojis render monochrome; if a label shows a box, prefer a Nerd codepoint
+  over guessing.
+- Board key legends are intentionally `FontId::proportional(10.0)` (hardcoded
+  in the drawing), independent of the scales above — do not tie them to the
+  global styles or the 36x27 key rects will clip.
 
 ---
 
@@ -542,6 +558,12 @@ The default egui font lacks many glyphs. NEVER use in any UI string:
 8. `#` starts a comment in fish and bash too — always quote it in args:
    `cargo run -- live '#ff0000'`.
 9. Baseline capture must happen ONLY at verified factory state (§6.6).
+10. **Rebuilding while `aula-f75 tray` runs breaks its "Show"**: the daemon
+    resolves `std::env::current_exe()` from `/proc/self/exe`, which reports
+    `.../aula-f75 (deleted)` after cargo replaces the binary, so spawning the
+    GUI fails with `os error 2`. Restart the daemon after every rebuild
+    (`pkill -f 'target/debug/aula-f75 tray'` — quote it so the pattern does
+    not match your own shell).
 
 ---
 

@@ -458,6 +458,9 @@ impl GuiApp {
         // Catppuccin Mocha (catppuccin/egui) — the whole app runs on this
         // palette; widget colors come from the theme, not from defaults.
         catppuccin_egui::set_theme(&cc.egui_ctx, catppuccin_egui::MOCHA);
+        // CaskaydiaCove Nerd Font 14 px, compiled in (after the theme, so the
+        // cloned style keeps the Mocha visuals).
+        crate::fonts::install(&cc.egui_ctx);
 
         let ctx = cc.egui_ctx.clone();
         ipc::watch(listener, move |msg| {

@@ -7,6 +7,8 @@
 
 📦 **Repo:** `https://github.com/antraxbr666/aula-f75-rs.git` · 🧠 **Documentação técnica completa:** [`AGENTS.md`](AGENTS.md)
 
+> 🔤 Tipografia embutida: **CaskaydiaCove Nerd Font Mono** (`assets/CaskaydiaCoveNerdFontMono-Regular.ttf`), compilada via `include_bytes!` — nenhuma fonte precisa estar instalada no sistema. Licenças em `assets/LICENSE-NerdFonts.txt` (Nerd Fonts / Cascadia Code, SIL OFL 1.1).
+
 ---
 
 ## ✨ Destaques
@@ -23,6 +25,7 @@
 | 🧵 | Toda IO HID em *thread* própria — **a interface nunca trava** |
 | 🐧 | **Linux** com regra udev incluída (sem sudo) |
 | 🌿 | Tema **Catppuccin Mocha** ([catppuccin/egui](https://github.com/catppuccin/egui)) |
+| 🔤 | **CaskaydiaCove Nerd Font** embutida no binário (texto base 14 px, tudo mono + ícones Nerd) |
 
 ---
 

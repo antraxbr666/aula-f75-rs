@@ -3,6 +3,7 @@
 mod daemon;
 mod device;
 mod factory;
+mod fonts;
 mod gui;
 mod ipc;
 mod keymap;
