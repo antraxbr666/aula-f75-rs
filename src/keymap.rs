@@ -104,6 +104,34 @@ pub fn find(name: &str) -> Option<&'static Key> {
     KEYS.iter().find(|k| k.name.eq_ignore_ascii_case(name))
 }
 
+/// Short on-keycap legend for the board drawing (long names don't fit).
+pub fn label(name: &str) -> &str {
+    match name {
+        "backspace" => "bksp",
+        "capslock" => "caps",
+        "backslash" => "\\",
+        "lbracket" => "[",
+        "rbracket" => "]",
+        "semicolon" => ";",
+        "quote" => "'",
+        "minus" => "-",
+        "equal" => "=",
+        "grave" => "`",
+        "comma" => ",",
+        "period" => ".",
+        "slash" => "/",
+        "lshift" | "rshift" => "shift",
+        "lctrl" | "rctrl" => "ctrl",
+        "lwin" => "win",
+        "lalt" | "ralt" => "alt",
+        "up" => "↑",
+        "down" => "↓",
+        "left" => "←",
+        "right" => "→",
+        other => other,
+    }
+}
+
 /// Size of one planar color plane (126 keys, indices 0..=89 used).
 pub const PLANE: usize = 126;
 

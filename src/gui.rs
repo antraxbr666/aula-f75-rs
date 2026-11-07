@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Vec2, pos2};
 
 use crate::device::Keyboard;
-use crate::keymap::{KEYS, PLANE};
+use crate::keymap::{self, KEYS, PLANE};
 use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
@@ -666,7 +666,6 @@ impl eframe::App for GuiApp {
                 // click handling (Ctrl-click = add to selection)
                 let id = Id::new(("key", key.led));
                 let r = ui.interact(rect, id, Sense::click());
-                let hovered = r.hovered();
                 if r.clicked() {
                     if ctx.input(|i| i.modifiers.ctrl) {
                         if !self.selected.insert(key.led) {
@@ -677,15 +676,18 @@ impl eframe::App for GuiApp {
                         self.selected.insert(key.led);
                     }
                 }
-                if hovered {
-                    painter.text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        key.name,
-                        egui::FontId::proportional(10.0),
-                        Color32::WHITE,
-                    );
-                }
+                // always-on keycap legend: dark shadow + white text reads on
+                // any LED color
+                let label = keymap::label(key.name);
+                let font = egui::FontId::proportional(if r.hovered() { 11.5 } else { 10.0 });
+                painter.text(
+                    rect.center() + Vec2::new(0.7, 0.7),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    font.clone(),
+                    Color32::from_black_alpha(160),
+                );
+                painter.text(rect.center(), egui::Align2::CENTER_CENTER, label, font, Color32::WHITE);
             }
         });
     }
