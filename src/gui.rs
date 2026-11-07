@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Vec2, pos2};
+use eframe::egui::{self, pos2, Color32, Id, Rect, Sense, Stroke, Vec2};
 
 use crate::device::Keyboard;
 use crate::factory;
@@ -18,6 +18,7 @@ use crate::keymap::{self, KEYS, PLANE};
 use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
+use crate::tray;
 use crate::{macros, remap};
 
 /// ---- worker (device IO) ----
@@ -25,13 +26,34 @@ use crate::{macros, remap};
 enum Job {
     Read,
     ApplyLed(Vec<u8>),
-    ApplyRgb { per_key: Vec<[u8; 3]>, set_effect_custom: bool },
+    ApplyRgb {
+        per_key: Vec<[u8; 3]>,
+        set_effect_custom: bool,
+    },
     FactoryReset,
-    Remap { layer: u8, index: u8, entry: [u8; 4] },
-    MacroSet { slot: usize, name: String, seq: String },
-    MacroAssign { layer: u8, key: u8, macro_idx: u8, mode: u8 },
-    MacroDel { slot: usize },
-    RestoreKey { layer: u8, index: u8 },
+    Remap {
+        layer: u8,
+        index: u8,
+        entry: [u8; 4],
+    },
+    MacroSet {
+        slot: usize,
+        name: String,
+        seq: String,
+    },
+    MacroAssign {
+        layer: u8,
+        key: u8,
+        macro_idx: u8,
+        mode: u8,
+    },
+    MacroDel {
+        slot: usize,
+    },
+    RestoreKey {
+        layer: u8,
+        index: u8,
+    },
     RestoreKeymaps,
 }
 
@@ -48,7 +70,11 @@ enum Reply {
     /// GUI can update its state immediately (board markers, remap list)
     /// without waiting for the follow-up hardware re-read (which can fail
     /// transiently on the 2.4G dongle and leave stale UI state).
-    KeymapsUpdated { msg: String, layer: u8, block: Vec<u8> },
+    KeymapsUpdated {
+        msg: String,
+        layer: u8,
+        block: Vec<u8>,
+    },
     Error(String),
 }
 
@@ -73,9 +99,13 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
         let reply = match job {
             Job::Read => match open_kb(&mut api) {
                 Ok(kb) => match read_all(&kb) {
-                    Ok((led_block, per_key, battery, device, keymaps)) => {
-                        Reply::Read { led: led_block, per_key, battery, device, keymaps }
-                    }
+                    Ok((led_block, per_key, battery, device, keymaps)) => Reply::Read {
+                        led: led_block,
+                        per_key,
+                        battery,
+                        device,
+                        keymaps,
+                    },
                     Err(e) => Reply::Error(format!("read failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
@@ -87,7 +117,10 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::ApplyRgb { per_key, set_effect_custom } => match open_kb(&mut api) {
+            Job::ApplyRgb {
+                per_key,
+                set_effect_custom,
+            } => match open_kb(&mut api) {
                 Ok(kb) => apply_rgb(&kb, &api, &per_key, set_effect_custom)
                     .map(|()| Reply::Done("per-key colors applied".into()))
                     .unwrap_or_else(|e| Reply::Error(format!("write failed: {e:#}"))),
@@ -100,7 +133,11 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::Remap { layer, index, entry } => match open_kb(&mut api) {
+            Job::Remap {
+                layer,
+                index,
+                entry,
+            } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
                     let mut block = kb.read_keymap(layer)?;
                     block[index as usize * 4..index as usize * 4 + 4].copy_from_slice(&entry);
@@ -114,7 +151,11 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                         block,
                     ))
                 })()
-                .map(|(m, block)| Reply::KeymapsUpdated { msg: format!("remapped {m}"), layer, block })
+                .map(|(m, block)| Reply::KeymapsUpdated {
+                    msg: format!("remapped {m}"),
+                    layer,
+                    block,
+                })
                 .unwrap_or_else(|e| Reply::Error(format!("remap failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -125,7 +166,13 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                     }
                     let events = macros::parse_sequence(&seq).map_err(anyhow::Error::msg)?;
                     let mut store = macros::Store::parse(&kb.read_macros()?);
-                    store.set(slot, macros::Macro { name: name.clone(), events });
+                    store.set(
+                        slot,
+                        macros::Macro {
+                            name: name.clone(),
+                            events,
+                        },
+                    );
                     kb.write_macros(&api, &store.build())?;
                     Ok(format!("macro {slot} '{name}' saved"))
                 })()
@@ -133,7 +180,12 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("macro save failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::MacroAssign { layer, key, macro_idx, mode } => match open_kb(&mut api) {
+            Job::MacroAssign {
+                layer,
+                key,
+                macro_idx,
+                mode,
+            } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
                     let store = macros::Store::parse(&kb.read_macros()?);
                     match store.macros.get(macro_idx as usize) {
@@ -153,7 +205,11 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                         block,
                     ))
                 })()
-                .map(|(m, block)| Reply::KeymapsUpdated { msg: format!("assigned {m}"), layer, block })
+                .map(|(m, block)| Reply::KeymapsUpdated {
+                    msg: format!("assigned {m}"),
+                    layer,
+                    block,
+                })
                 .unwrap_or_else(|e| Reply::Error(format!("assign failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -173,17 +229,28 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
             },
             Job::RestoreKey { layer, index } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
-                    let fac: &[u8; 504] = if layer == 0 { &factory::BASE } else { &factory::FN };
+                    let fac: &[u8; 504] = if layer == 0 {
+                        &factory::BASE
+                    } else {
+                        &factory::FN
+                    };
                     let o = index as usize * 4;
                     let mut block = kb.read_keymap(layer)?;
                     block[o..o + 4].copy_from_slice(&fac[o..o + 4]);
                     kb.write_keymap(&api, layer, &block)?;
                     Ok((
-                        format!("{} restored to factory", remap::matrix_name(index).unwrap_or("?")),
+                        format!(
+                            "{} restored to factory",
+                            remap::matrix_name(index).unwrap_or("?")
+                        ),
                         block,
                     ))
                 })()
-                .map(|(m, block)| Reply::KeymapsUpdated { msg: m, layer, block })
+                .map(|(m, block)| Reply::KeymapsUpdated {
+                    msg: m,
+                    layer,
+                    block,
+                })
                 .unwrap_or_else(|e| Reply::Error(format!("restore failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -216,7 +283,9 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
     }
 }
 
-fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>, String, [Vec<u8>; 2])> {
+fn read_all(
+    kb: &Keyboard,
+) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>, String, [Vec<u8>; 2])> {
     let led_block = kb.read_led()?;
     let rgb = kb.read_block(cmd::PER_KEY_RGB, 0, PLANE * 3)?;
     let mut per_key = vec![[0u8; 3]; 90];
@@ -237,7 +306,12 @@ fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>,
     Ok((led_block, per_key, battery, device, keymaps))
 }
 
-fn apply_rgb(kb: &Keyboard, api: &hidapi::HidApi, per_key: &[[u8; 3]], set_effect_custom: bool) -> anyhow::Result<()> {
+fn apply_rgb(
+    kb: &Keyboard,
+    api: &hidapi::HidApi,
+    per_key: &[[u8; 3]],
+    set_effect_custom: bool,
+) -> anyhow::Result<()> {
     let mut block = vec![0u8; PLANE * 3];
     for (i, c) in per_key.iter().take(PLANE).enumerate() {
         block[i] = c[0];
@@ -339,6 +413,8 @@ pub struct GuiApp {
     macro_mode: u8,
     // periodic refresh
     last_refresh: Instant,
+    /// Resident SNI tray service; `None` = no tray host (X exits the app).
+    tray: Option<tray::TrayHandle>,
 }
 
 impl Default for GuiApp {
@@ -371,6 +447,7 @@ impl Default for GuiApp {
             macro_seq: String::new(),
             macro_mode: 1,
             last_refresh: Instant::now(),
+            tray: None,
         };
         app.send(Job::Read);
         app
@@ -385,9 +462,15 @@ impl GuiApp {
     /// True when the key's entry in `layer` differs from the factory
     /// baseline (i.e. it carries an active remap).
     fn is_remapped(&self, idx: u8, layer: u8) -> bool {
-        let Some(km) = &self.keymaps else { return false };
+        let Some(km) = &self.keymaps else {
+            return false;
+        };
         let o = idx as usize * 4;
-        let fac: &[u8; 504] = if layer == 0 { &factory::BASE } else { &factory::FN };
+        let fac: &[u8; 504] = if layer == 0 {
+            &factory::BASE
+        } else {
+            &factory::FN
+        };
         km[layer as usize].get(o..o + 4) != Some(&fac[o..o + 4])
     }
 
@@ -408,13 +491,23 @@ impl GuiApp {
         while let Ok(reply) = self.rx.try_recv() {
             self.pending = false;
             match reply {
-                Reply::Read { led: led_block, per_key, battery, device, keymaps } => {
+                Reply::Read {
+                    led: led_block,
+                    per_key,
+                    battery,
+                    device,
+                    keymaps,
+                } => {
                     self.connected = true;
                     self.battery = battery;
                     self.device = device;
                     self.keymaps = Some(keymaps);
                     let effect = led_block[led::ACTIVE_EFFECT];
-                    self.lighting.effect = if EFFECTS.iter().any(|(n, _)| *n == effect) { effect } else { 1 };
+                    self.lighting.effect = if EFFECTS.iter().any(|(n, _)| *n == effect) {
+                        effect
+                    } else {
+                        1
+                    };
                     let hw = effect.max(1) as usize;
                     if hw <= 34 {
                         let off = led::effect_settings(hw as u8);
@@ -463,7 +556,9 @@ impl GuiApp {
     }
 
     fn apply_lighting(&mut self) {
-        let Some(block) = self.led.clone() else { return };
+        let Some(block) = self.led.clone() else {
+            return;
+        };
         let mut b = block;
         b[led::ACTIVE_EFFECT] = self.lighting.effect;
         let hw = self.lighting.effect.max(1);
@@ -476,7 +571,9 @@ impl GuiApp {
     }
 
     fn apply_settings(&mut self) {
-        let Some(block) = self.led.clone() else { return };
+        let Some(block) = self.led.clone() else {
+            return;
+        };
         let mut b = block;
         b[led::DEBOUNCE] = self.debounce;
         b[led::SLEEP_30S] = if self.sleep_on {
@@ -496,7 +593,10 @@ impl GuiApp {
     fn apply_rgb(&mut self, set_effect_custom: bool) {
         self.pending = true;
         self.status = "applying…".into();
-        self.send(Job::ApplyRgb { per_key: self.per_key.clone(), set_effect_custom });
+        self.send(Job::ApplyRgb {
+            per_key: self.per_key.clone(),
+            set_effect_custom,
+        });
     }
 
     fn apply_theme(&mut self, name: &str) {
@@ -529,14 +629,20 @@ impl GuiApp {
         ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀ brightness"));
         ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
         egui::ComboBox::from_id_salt("color")
-            .selected_text(format!("🎨 {}", COLORS[(self.lighting.color as usize).min(7)].1))
+            .selected_text(format!(
+                "🎨 {}",
+                COLORS[(self.lighting.color as usize).min(7)].1
+            ))
             .show_ui(ui, |ui| {
                 for (n, name) in COLORS {
                     ui.selectable_value(&mut self.lighting.color, *n, format!("{n}  {name}"));
                 }
             });
         ui.add_space(6.0);
-        if ui.add_enabled(!self.pending, egui::Button::new("✅ apply lighting")).clicked() {
+        if ui
+            .add_enabled(!self.pending, egui::Button::new("✅ apply lighting"))
+            .clicked()
+        {
             self.apply_lighting();
         }
     }
@@ -568,7 +674,11 @@ impl GuiApp {
                     self.pending = true;
                     self.status = "remapping…".into();
                     for k in self.selected.iter().copied().collect::<Vec<u8>>() {
-                        self.send(Job::Remap { layer: self.remap_layer, index: k, entry });
+                        self.send(Job::Remap {
+                            layer: self.remap_layer,
+                            index: k,
+                            entry,
+                        });
                     }
                 }
                 Err(e) => self.status = e,
@@ -588,24 +698,27 @@ impl GuiApp {
             ui.small("none — keyboard is at factory state");
         } else {
             let mut revert = Vec::new();
-            egui::Grid::new("active_remaps").num_columns(4).spacing([12.0, 2.0]).show(ui, |ui| {
-                for (layer, idx) in &remaps {
-                    let Some(km) = &self.keymaps else { break };
-                    let o = *idx as usize * 4;
-                    let e = &km[*layer as usize][o..o + 4];
-                    ui.small(if *layer == 0 { "base" } else { "Fn" });
-                    ui.small(remap::matrix_name(*idx).unwrap_or("?"));
-                    ui.small(remap::entry_desc(e));
-                    if ui
-                        .add_enabled(!self.pending, egui::Button::new("undo").small())
-                        .on_hover_text("revert this key to factory")
-                        .clicked()
-                    {
-                        revert.push((*layer, *idx));
+            egui::Grid::new("active_remaps")
+                .num_columns(4)
+                .spacing([12.0, 2.0])
+                .show(ui, |ui| {
+                    for (layer, idx) in &remaps {
+                        let Some(km) = &self.keymaps else { break };
+                        let o = *idx as usize * 4;
+                        let e = &km[*layer as usize][o..o + 4];
+                        ui.small(if *layer == 0 { "base" } else { "Fn" });
+                        ui.small(remap::matrix_name(*idx).unwrap_or("?"));
+                        ui.small(remap::entry_desc(e));
+                        if ui
+                            .add_enabled(!self.pending, egui::Button::new("undo").small())
+                            .on_hover_text("revert this key to factory")
+                            .clicked()
+                        {
+                            revert.push((*layer, *idx));
+                        }
+                        ui.end_row();
                     }
-                    ui.end_row();
-                }
-            });
+                });
             for (layer, idx) in revert {
                 self.pending = true;
                 self.status = "reverting to factory…".into();
@@ -646,7 +759,10 @@ impl GuiApp {
         ui.text_edit_singleline(&mut self.macro_seq);
         ui.small("h e l l o enter · ctrl+shift+t · wait:300 · ^shift hold");
         ui.horizontal(|ui| {
-            if ui.add_enabled(!self.pending, egui::Button::new("💾 save")).clicked() {
+            if ui
+                .add_enabled(!self.pending, egui::Button::new("💾 save"))
+                .clicked()
+            {
                 self.pending = true;
                 self.status = "saving macro…".into();
                 self.send(Job::MacroSet {
@@ -655,10 +771,15 @@ impl GuiApp {
                     seq: self.macro_seq.clone(),
                 });
             }
-            if ui.add_enabled(!self.pending, egui::Button::new("🗑 delete")).clicked() {
+            if ui
+                .add_enabled(!self.pending, egui::Button::new("🗑 delete"))
+                .clicked()
+            {
                 self.pending = true;
                 self.status = "deleting macro…".into();
-                self.send(Job::MacroDel { slot: self.macro_slot });
+                self.send(Job::MacroDel {
+                    slot: self.macro_slot,
+                });
             }
         });
         ui.add_space(4.0);
@@ -699,7 +820,11 @@ impl GuiApp {
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.sleep_on, "💤 Sleep");
             egui::ComboBox::from_id_salt("sleep")
-                .selected_text(if self.sleep_on { format!("{} s", self.sleep_secs) } else { "off".into() })
+                .selected_text(if self.sleep_on {
+                    format!("{} s", self.sleep_secs)
+                } else {
+                    "off".into()
+                })
                 .show_ui(ui, |ui| {
                     for (secs, _) in SLEEP_CHOICES {
                         ui.selectable_value(&mut self.sleep_secs, *secs, format!("{secs} s"));
@@ -708,7 +833,10 @@ impl GuiApp {
         });
         ui.add_space(4.0);
         ui.add(egui::Slider::new(&mut self.debounce, 0..=8).text("⏱ debounce (ms)"));
-        if ui.add_enabled(!self.pending, egui::Button::new("✅ apply settings")).clicked() {
+        if ui
+            .add_enabled(!self.pending, egui::Button::new("✅ apply settings"))
+            .clicked()
+        {
             self.apply_settings();
         }
 
@@ -741,9 +869,29 @@ impl GuiApp {
     }
 }
 
+impl GuiApp {
+    fn new(cc: &eframe::CreationContext) -> Self {
+        GuiApp {
+            tray: tray::spawn(&cc.egui_ctx),
+            ..Default::default()
+        }
+    }
+}
+
 impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
+
+        // window X hides to tray (app keeps running); tray Quit passes the
+        // close through (QUIT flag) and the app exits; without a tray host,
+        // the default close path also exits
+        if ctx.input(|i| i.viewport().close_requested())
+            && !tray::quit_requested()
+            && self.tray.is_some()
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
 
         // keep battery/status fresh; when disconnected, retry every 5 s
         // (the keyboard takes a few seconds to come back after a factory
@@ -784,39 +932,43 @@ impl eframe::App for GuiApp {
         });
 
         // left icon navbar: one button per section, hover shows its name
-        egui::SidePanel::left("nav").exact_width(56.0).show(ctx, |ui| {
-            ui.add_space(6.0);
-            ui.vertical_centered_justified(|ui| {
-                for section in Section::ALL {
-                    let selected = self.section == section;
-                    let resp = ui
-                        .add_sized(
-                            [44.0, 40.0],
-                            egui::SelectableLabel::new(selected, section.icon()),
-                        )
-                        .on_hover_text(section.hint());
-                    if resp.clicked() {
-                        self.section = section;
+        egui::SidePanel::left("nav")
+            .exact_width(56.0)
+            .show(ctx, |ui| {
+                ui.add_space(6.0);
+                ui.vertical_centered_justified(|ui| {
+                    for section in Section::ALL {
+                        let selected = self.section == section;
+                        let resp = ui
+                            .add_sized(
+                                [44.0, 40.0],
+                                egui::SelectableLabel::new(selected, section.icon()),
+                            )
+                            .on_hover_text(section.hint());
+                        if resp.clicked() {
+                            self.section = section;
+                        }
                     }
-                }
+                });
             });
-        });
 
         // right panel: only the selected section's controls
-        egui::SidePanel::right("controls").resizable(true).show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add_space(8.0);
-                match self.section {
-                    Section::Lighting => self.ui_lighting(ui),
-                    Section::Remap => self.ui_remap(ui),
-                    Section::Macros => self.ui_macros(ui),
-                    Section::Themes => self.ui_themes(ui),
-                    Section::Settings => self.ui_settings(ui),
-                    Section::Device => self.ui_device(ui),
-                }
-                ui.add_space(8.0);
+        egui::SidePanel::right("controls")
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.add_space(8.0);
+                    match self.section {
+                        Section::Lighting => self.ui_lighting(ui),
+                        Section::Remap => self.ui_remap(ui),
+                        Section::Macros => self.ui_macros(ui),
+                        Section::Themes => self.ui_themes(ui),
+                        Section::Settings => self.ui_settings(ui),
+                        Section::Device => self.ui_device(ui),
+                    }
+                    ui.add_space(8.0);
+                });
             });
-        });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The board is an EDITOR for the per-key custom layer, not a
@@ -867,7 +1019,13 @@ impl eframe::App for GuiApp {
                     font.clone(),
                     Color32::from_black_alpha(160),
                 );
-                painter.text(rect.center(), egui::Align2::CENTER_CENTER, label, font, Color32::WHITE);
+                painter.text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    font,
+                    Color32::WHITE,
+                );
             }
         });
     }
@@ -899,9 +1057,10 @@ pub fn run() -> Result<(), eframe::Error> {
         "aula-f75",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1010.0, 440.0]),
+                .with_inner_size([1010.0, 440.0])
+                .with_icon(tray::window_icon()),
             ..Default::default()
         },
-        Box::new(|_cc| Ok(Box::new(GuiApp::default()))),
+        Box::new(|cc| Ok(Box::new(GuiApp::new(cc)))),
     )
 }

@@ -9,6 +9,7 @@ mod macros;
 mod protocol;
 mod remap;
 mod themes;
+mod tray;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -18,7 +19,11 @@ use device::Keyboard;
 use protocol::{led, COLORS, EFFECTS};
 
 #[derive(Parser)]
-#[command(name = "aula-f75", version, about = "AULA F75 configuration tool (2.4G / Bluetooth)")]
+#[command(
+    name = "aula-f75",
+    version,
+    about = "AULA F75 configuration tool (2.4G / Bluetooth)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -262,7 +267,11 @@ fn main() -> Result<()> {
                 None => println!("battery: no reply"),
             }
         }
-        Command::Remap { layer, raw, assignments } => {
+        Command::Remap {
+            layer,
+            raw,
+            assignments,
+        } => {
             if layer > 3 {
                 bail!("layer must be 0-3 (0 = base, 1 = Fn)");
             }
@@ -305,7 +314,10 @@ fn main() -> Result<()> {
         Command::Live { anim, seconds } => {
             let anim = live::Anim::parse(&anim).map_err(anyhow::Error::msg)?;
             let kb = Keyboard::open(&api)?;
-            println!("streaming '{}' for {seconds}s (custom effect, ~14 fps)…", anim.name());
+            println!(
+                "streaming '{}' for {seconds}s (custom effect, ~14 fps)…",
+                anim.name()
+            );
             let frames = live::play(&kb, &api, &anim, seconds)?;
             println!("done: {frames} frames sent (board reverts to its effect in ~2s)");
         }
@@ -329,7 +341,11 @@ fn macro_cmd(api: &HidApi, cmd: MacroCmd) -> Result<()> {
                 println!("  {}", events.join(" "));
             }
         }
-        MacroCmd::Set { index, name, sequence } => {
+        MacroCmd::Set {
+            index,
+            name,
+            sequence,
+        } => {
             if !name.is_ascii() || name.len() > 32 {
                 bail!("macro name must be ASCII and at most 32 bytes");
             }
@@ -344,24 +360,38 @@ fn macro_cmd(api: &HidApi, cmd: MacroCmd) -> Result<()> {
             }
             let block = kb.read_macros()?;
             let mut store = macros::Store::parse(&block);
-            store.set(index, macros::Macro { name: name.clone(), events });
+            store.set(
+                index,
+                macros::Macro {
+                    name: name.clone(),
+                    events,
+                },
+            );
             let out = store.build();
             kb.write_macros(api, &out)?;
             let reread = macros::Store::parse(&kb.read_macros()?);
             let saved = reread.macros.get(index);
             match saved {
                 Some(m) if m.name == name => {
-                    println!("macro {index} '{name}' saved ({} events, read-back OK)", m.events.len());
+                    println!(
+                        "macro {index} '{name}' saved ({} events, read-back OK)",
+                        m.events.len()
+                    );
                 }
                 _ => println!("warning: read-back mismatch: {saved:?}"),
             }
         }
-        MacroCmd::Assign { key, index, mode, count, layer } => {
+        MacroCmd::Assign {
+            key,
+            index,
+            mode,
+            count,
+            layer,
+        } => {
             if ![1, 2, 4].contains(&mode) {
                 bail!("mode must be 1 (run N times), 2 (while held) or 4 (until any key)");
             }
-            let idx = remap::matrix_index(&key)
-                .with_context(|| format!("unknown key '{key}'"))?;
+            let idx = remap::matrix_index(&key).with_context(|| format!("unknown key '{key}'"))?;
             let block = kb.read_macros()?;
             let store = macros::Store::parse(&block);
             if index >= store.macros.len() || store.macros[index].events.is_empty() {
@@ -400,7 +430,10 @@ fn info(api: &HidApi) -> Result<()> {
         let brightness = block[off];
         let speed = block[off + 1] >> 4;
         let color = block[off + 1] & 0x0F;
-        println!("brightness: {brightness}  speed: {speed}  color: {color} ({})", color_name(color));
+        println!(
+            "brightness: {brightness}  speed: {speed}  color: {color} ({})",
+            color_name(color)
+        );
     }
     println!(
         "win-lock: {}  side-light: {}  knob: {}  os-mode: {}  sleep: {}s",
@@ -425,10 +458,7 @@ fn effect_name(hw: u8) -> &'static str {
 }
 
 fn color_name(c: u8) -> &'static str {
-    COLORS
-        .get(c as usize)
-        .map(|(_, n)| *n)
-        .unwrap_or("unknown")
+    COLORS.get(c as usize).map(|(_, n)| *n).unwrap_or("unknown")
 }
 
 fn parse_hex_color(hex: &str) -> Result<[u8; 3]> {

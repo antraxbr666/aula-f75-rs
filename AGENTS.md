@@ -8,7 +8,8 @@ unless explicitly marked otherwise. Read this file fully before touching
 firmware behavior that is **not** discoverable from the community doc alone.
 
 - Repo: https://github.com/antraxbr666/aula-f75-rs.git (branch `main`)
-- Stack: Rust, `hidapi` (HID IO), `egui`/`eframe` 0.29 (GUI), `clap` (CLI)
+- Stack: Rust, `hidapi` (HID IO), `egui`/`eframe` 0.29 (GUI), `ksni` (SNI tray),
+  `clap` (CLI)
 - Platform: **Linux x86_64 only** (Windows support dropped; developed and
   tested on shadowBox — Arch, niri + Wayland)
 - All HID communication is hardcoded via `hidapi` — no vendor driver required.
@@ -429,6 +430,7 @@ src/
   live.rs      Anim::{Rainbow,Wave,Fire,Solid}, band construction, play()
   factory.rs   factory BASE/FN keymap constants (see §6.6!)
   gui.rs       egui app: worker thread + mpsc jobs, sections, board drawing
+  tray.rs      ksni SNI tray: Show/Quit menu, embedded icon, close-to-tray
 ```
 
 ### 10.1 GUI architecture rules (keep these)
@@ -451,6 +453,20 @@ src/
 - Board drawing = editor for the custom RGB layer. Keys with an active
   remap in the selected layer get an orange stroke; selection = white
   stroke; Ctrl-click adds to selection.
+- **Tray (ksni/SNI, `src/tray.rs`)**: the window's X HIDES to tray — `update()`
+  catches `close_requested`, sends `CancelClose` + `Visible(false)`; the app
+  keeps running (worker thread alive). The tray menu's Show sends
+  `Visible(true)` + `Focus` and Quit sets an atomic flag and sends `Close`
+  WITHOUT canceling — an uncanceled `Close` on the root viewport is the
+  clean exit path in egui 0.29 (there is no `Exit` command). Tray actions run
+  on the ksni D-Bus thread and wake the UI via a cloned `egui::Context`
+  (thread-safe; `send_viewport_cmd` + `request_repaint`). If no SNI watcher
+  answers (no bar), `tray::spawn` returns None and the X exits the app
+  normally — never hide a window to a nonexistent tray. Icon bytes are a
+  pre-rendered 64x64 RGBA (`assets/icon-64.rgba`, straight alpha for egui,
+  rotated to ARGB32 for ksni) — regenerate with `resvg --width 64 --height
+  64 assets/icon.svg /tmp/icon.png && magick /tmp/icon.png -depth 8
+  rgba:assets/icon-64.rgba`.
 
 ### 10.2 egui font gotchas (caused real bugs)
 
@@ -537,9 +553,11 @@ aula-f75 remap 0 --raw            # byte-compare vs factory::BASE if unsure
   what's stored (CLI `macro list` does). Obvious UX gap, easy win.
 - **GitHub Actions builds** (Linux x86_64) — deliberately deferred by the
   owner; ask before adding.
-- Deliberately NOT wanted (owner's decision, do not resurrect): tray icon,
-  language switcher, startup entry, per-key GUI painting section, GUI Live
+- Deliberately NOT wanted (owner's decision, do not resurrect): language
+  switcher, startup entry, per-key GUI painting section, GUI Live
   section, macOS support, Windows support (dropped — Linux x86_64 only).
+  (A tray icon was on this list until 2026-11, when the owner requested
+  one — see §10.1.)
 - PALETTE block (0x09, 490 B) is known but unused; only touch it with
   hardware in hand to validate.
 
