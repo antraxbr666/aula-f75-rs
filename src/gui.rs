@@ -1,6 +1,10 @@
 //! GUI (egui/eframe): on-screen board, per-key painting, lighting controls
 //! and device settings (sleep/debounce/reset). HID traffic runs on a worker
 //! thread so the UI never blocks.
+//!
+//! Layout: vertical icon navbar on the left (one icon per section, hover
+//! hint shows the section name); the selected section's controls live in
+//! the right panel; the keyboard drawing fills the center.
 
 use std::collections::BTreeSet;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -195,6 +199,59 @@ fn apply_rgb(kb: &Keyboard, api: &hidapi::HidApi, per_key: &[[u8; 3]], set_effec
 
 /// ---- GUI ----
 
+/// Sections reachable from the left icon navbar.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum Section {
+    #[default]
+    Lighting,
+    Remap,
+    Macros,
+    Live,
+    PerKey,
+    Themes,
+    Settings,
+    Device,
+}
+
+impl Section {
+    fn icon(self) -> &'static str {
+        match self {
+            Section::Lighting => "💡",
+            Section::Remap => "⌨️",
+            Section::Macros => "⏺",
+            Section::Live => "🎵",
+            Section::PerKey => "🎨",
+            Section::Themes => "🌈",
+            Section::Settings => "⚙️",
+            Section::Device => "ℹ️",
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            Section::Lighting => "Lighting",
+            Section::Remap => "Remap",
+            Section::Macros => "Macros",
+            Section::Live => "Live",
+            Section::PerKey => "Per-key",
+            Section::Themes => "Themes",
+            Section::Settings => "Settings",
+            Section::Device => "Device",
+        }
+    }
+
+    const ALL: [Section; 8] = [
+        Section::Lighting,
+        Section::Remap,
+        Section::Macros,
+        Section::Live,
+        Section::PerKey,
+        Section::Themes,
+        Section::Settings,
+        Section::Device,
+    ];
+}
+
 #[derive(Default)]
 struct Lighting {
     effect: u8,
@@ -216,6 +273,7 @@ pub struct GuiApp {
     per_key: Vec<[u8; 3]>,
     selected: BTreeSet<u8>,
     paint: [u8; 3],
+    section: Section,
     // settings
     sleep_on: bool,
     sleep_secs: u16,
@@ -252,6 +310,7 @@ impl Default for GuiApp {
             per_key: vec![[0, 0, 0]; 90],
             selected: BTreeSet::new(),
             paint: [255, 0, 0],
+            section: Section::Lighting,
             sleep_on: false,
             sleep_secs: 300,
             debounce: 0,
@@ -374,6 +433,260 @@ impl GuiApp {
     }
 }
 
+// ---- section panels ----
+
+impl GuiApp {
+    fn ui_lighting(&mut self, ui: &mut egui::Ui) {
+        ui.heading("💡 Lighting");
+        egui::ComboBox::from_id_salt("effect")
+            .selected_text(effect_label(self.lighting.effect))
+            .show_ui(ui, |ui| {
+                for (n, name) in EFFECTS {
+                    ui.selectable_value(&mut self.lighting.effect, *n, format!("{n}  {name}"));
+                }
+            });
+        ui.add_space(6.0);
+        ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀️ brightness"));
+        ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
+        egui::ComboBox::from_id_salt("color")
+            .selected_text(format!("🎨 {}", COLORS[(self.lighting.color as usize).min(7)].1))
+            .show_ui(ui, |ui| {
+                for (n, name) in COLORS {
+                    ui.selectable_value(&mut self.lighting.color, *n, format!("{n}  {name}"));
+                }
+            });
+        ui.add_space(6.0);
+        if ui.add_enabled(!self.pending, egui::Button::new("✅ apply lighting")).clicked() {
+            self.apply_lighting();
+        }
+    }
+
+    fn ui_remap(&mut self, ui: &mut egui::Ui) {
+        ui.heading("⌨️ Remap");
+        ui.label("Select keys on the board, then set what they do.");
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label("layer:");
+            egui::ComboBox::from_id_salt("remap-layer")
+                .selected_text(if self.remap_layer == 0 { "base" } else { "Fn" }.to_string())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.remap_layer, 0u8, "base");
+                    ui.selectable_value(&mut self.remap_layer, 1u8, "Fn");
+                });
+        });
+        ui.text_edit_singleline(&mut self.remap_target);
+        ui.small("target: esc · ctrl+shift+t · none · macro:0 · consumer:0E9");
+        if ui
+            .add_enabled(
+                !self.pending && !self.selected.is_empty(),
+                egui::Button::new("✅ remap selected"),
+            )
+            .clicked()
+        {
+            match remap::parse_target(&self.remap_target) {
+                Ok(entry) => {
+                    self.pending = true;
+                    self.status = "remapping…".into();
+                    for k in self.selected.iter().copied().collect::<Vec<u8>>() {
+                        self.send(Job::Remap { layer: self.remap_layer, index: k, entry });
+                    }
+                }
+                Err(e) => self.status = e,
+            }
+        }
+        ui.add_space(6.0);
+        ui.small(format!("selected: {}", selected_names(&self.selected)));
+    }
+
+    fn ui_macros(&mut self, ui: &mut egui::Ui) {
+        ui.heading("⏺ Macros");
+        ui.horizontal(|ui| {
+            ui.label("slot:");
+            ui.add(egui::DragValue::new(&mut self.macro_slot).range(0..=15));
+            egui::ComboBox::from_id_salt("macro-mode")
+                .selected_text(
+                    match self.macro_mode {
+                        2 => "while held",
+                        4 => "until any key",
+                        _ => "run once",
+                    }
+                    .to_string(),
+                )
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.macro_mode, 1u8, "run once");
+                    ui.selectable_value(&mut self.macro_mode, 2u8, "while held");
+                    ui.selectable_value(&mut self.macro_mode, 4u8, "until any key");
+                });
+        });
+        ui.add_space(4.0);
+        ui.text_edit_singleline(&mut self.macro_name);
+        ui.small("name (ASCII)");
+        ui.text_edit_singleline(&mut self.macro_seq);
+        ui.small("h e l l o enter · ctrl+shift+t · wait:300 · ^shift hold");
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!self.pending, egui::Button::new("💾 save")).clicked() {
+                self.pending = true;
+                self.status = "saving macro…".into();
+                self.send(Job::MacroSet {
+                    slot: self.macro_slot,
+                    name: self.macro_name.clone(),
+                    seq: self.macro_seq.clone(),
+                });
+            }
+            if ui.add_enabled(!self.pending, egui::Button::new("🗑 delete")).clicked() {
+                self.pending = true;
+                self.status = "deleting macro…".into();
+                self.send(Job::MacroDel { slot: self.macro_slot });
+            }
+        });
+        ui.add_space(4.0);
+        if ui
+            .add_enabled(
+                !self.pending && !self.selected.is_empty(),
+                egui::Button::new("⌨ assign macro to selected"),
+            )
+            .clicked()
+        {
+            self.pending = true;
+            self.status = "assigning macro…".into();
+            for k in self.selected.iter().copied().collect::<Vec<u8>>() {
+                self.send(Job::MacroAssign {
+                    layer: self.remap_layer,
+                    key: k,
+                    macro_idx: self.macro_slot as u8,
+                    mode: self.macro_mode,
+                });
+            }
+        }
+    }
+
+    fn ui_live(&mut self, ui: &mut egui::Ui) {
+        ui.heading("🎵 Live");
+        ui.label("Stream animation frames to the keyboard in real time.");
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("live-anim")
+                .selected_text(
+                    ["rainbow", "wave", "fire", "solid"]
+                        .get(self.live_anim)
+                        .copied()
+                        .unwrap_or("rainbow")
+                        .to_string(),
+                )
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.live_anim, 0usize, "rainbow");
+                    ui.selectable_value(&mut self.live_anim, 1usize, "wave");
+                    ui.selectable_value(&mut self.live_anim, 2usize, "fire");
+                    ui.selectable_value(&mut self.live_anim, 3usize, "solid (paint color)");
+                });
+            ui.add(egui::DragValue::new(&mut self.live_secs).range(3..=60).suffix(" s"));
+        });
+        if ui
+            .add_enabled(!self.pending, egui::Button::new("▶ play on keyboard"))
+            .clicked()
+        {
+            let anim = match self.live_anim {
+                1 => live::Anim::Wave,
+                2 => live::Anim::Fire,
+                3 => live::Anim::Solid(self.paint),
+                _ => live::Anim::Rainbow,
+            };
+            self.pending = true;
+            self.status = format!("streaming {}…", anim.name());
+            self.send(Job::Live { anim, seconds: self.live_secs });
+        }
+    }
+
+    fn ui_per_key(&mut self, ui: &mut egui::Ui) {
+        ui.heading("🎨 Per-key");
+        let mut c = [
+            self.paint[0] as f32 / 255.0,
+            self.paint[1] as f32 / 255.0,
+            self.paint[2] as f32 / 255.0,
+        ];
+        ui.color_edit_button_rgb(&mut c);
+        self.paint = [
+            (c[0] * 255.0) as u8,
+            (c[1] * 255.0) as u8,
+            (c[2] * 255.0) as u8,
+        ];
+        ui.small(format!("selected: {}", selected_names(&self.selected)));
+        ui.horizontal(|ui| {
+            if ui.button("🖌 paint selected").clicked() && !self.pending {
+                for i in &self.selected {
+                    self.per_key[*i as usize] = self.paint;
+                }
+                self.apply_rgb(true);
+            }
+            if ui.button("⌫ clear selection").clicked() {
+                self.selected.clear();
+            }
+        });
+    }
+
+    fn ui_themes(&mut self, ui: &mut egui::Ui) {
+        ui.heading("🌈 Themes");
+        ui.horizontal_wrapped(|ui| {
+            for t in themes::THEMES {
+                if ui.button(*t).clicked() && !self.pending {
+                    self.apply_theme(t);
+                }
+            }
+        });
+        ui.add_space(8.0);
+        if ui.button("⚫ all off").clicked() && !self.pending {
+            self.per_key = vec![[0, 0, 0]; 90];
+            self.apply_rgb(false);
+        }
+    }
+
+    fn ui_settings(&mut self, ui: &mut egui::Ui) {
+        ui.heading("⚙️ Settings");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.sleep_on, "💤 Sleep");
+            egui::ComboBox::from_id_salt("sleep")
+                .selected_text(if self.sleep_on { format!("{} s", self.sleep_secs) } else { "off".into() })
+                .show_ui(ui, |ui| {
+                    for (secs, _) in SLEEP_CHOICES {
+                        ui.selectable_value(&mut self.sleep_secs, *secs, format!("{secs} s"));
+                    }
+                });
+        });
+        ui.add_space(4.0);
+        ui.add(egui::Slider::new(&mut self.debounce, 0..=8).text("⏱ debounce (ms)"));
+        if ui.add_enabled(!self.pending, egui::Button::new("✅ apply settings")).clicked() {
+            self.apply_settings();
+        }
+
+        ui.add_space(8.0);
+        if !self.confirm_reset {
+            if ui.button("♻ factory reset").clicked() {
+                self.confirm_reset = true;
+            }
+        } else {
+            ui.horizontal(|ui| {
+                ui.colored_label(Color32::RED, "Reset keyboard to factory?");
+                if ui.button("YES").clicked() {
+                    self.confirm_reset = false;
+                    self.pending = true;
+                    self.status = "sending reset…".into();
+                    self.send(Job::FactoryReset);
+                }
+                if ui.button("cancel").clicked() {
+                    self.confirm_reset = false;
+                }
+            });
+        }
+    }
+
+    fn ui_device(&mut self, ui: &mut egui::Ui) {
+        ui.heading("ℹ️ Device");
+        ui.small(self.device.clone());
+        ui.add_space(4.0);
+        ui.small("Firmware: not exposed over the 2.4G dongle");
+    }
+}
+
 impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
@@ -409,240 +722,40 @@ impl eframe::App for GuiApp {
             });
         });
 
-        egui::SidePanel::right("controls").show(ctx, |ui| {
+        // left icon navbar: one button per section, hover shows its name
+        egui::SidePanel::left("nav").exact_width(56.0).show(ctx, |ui| {
+            ui.add_space(6.0);
+            ui.vertical_centered_justified(|ui| {
+                for section in Section::ALL {
+                    let selected = self.section == section;
+                    let resp = ui
+                        .add_sized(
+                            [44.0, 40.0],
+                            egui::SelectableLabel::new(selected, section.icon()),
+                        )
+                        .on_hover_text(section.hint());
+                    if resp.clicked() {
+                        self.section = section;
+                    }
+                }
+            });
+        });
+
+        // right panel: only the selected section's controls
+        egui::SidePanel::right("controls").resizable(true).show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(8.0);
-                ui.heading("💡 Lighting");
-                egui::ComboBox::from_id_salt("effect")
-                    .selected_text(effect_label(self.lighting.effect))
-                    .show_ui(ui, |ui| {
-                        for (n, name) in EFFECTS {
-                            ui.selectable_value(&mut self.lighting.effect, *n, format!("{n}  {name}"));
-                        }
-                    });
-                ui.add_space(6.0);
-                ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀️ brightness"));
-                ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
-                egui::ComboBox::from_id_salt("color")
-                    .selected_text(format!("🎨 {}", COLORS[(self.lighting.color as usize).min(7)].1))
-                    .show_ui(ui, |ui| {
-                        for (n, name) in COLORS {
-                            ui.selectable_value(&mut self.lighting.color, *n, format!("{n}  {name}"));
-                        }
-                    });
-                ui.add_space(6.0);
-                if ui.add_enabled(!self.pending, egui::Button::new("✅ apply lighting")).clicked() {
-                    self.apply_lighting();
+                match self.section {
+                    Section::Lighting => self.ui_lighting(ui),
+                    Section::Remap => self.ui_remap(ui),
+                    Section::Macros => self.ui_macros(ui),
+                    Section::Live => self.ui_live(ui),
+                    Section::PerKey => self.ui_per_key(ui),
+                    Section::Themes => self.ui_themes(ui),
+                    Section::Settings => self.ui_settings(ui),
+                    Section::Device => self.ui_device(ui),
                 }
-
-                ui.add_space(16.0);
-                ui.heading("⚙️ Settings");
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.sleep_on, "💤 Sleep");
-                    egui::ComboBox::from_id_salt("sleep")
-                        .selected_text(if self.sleep_on { format!("{} s", self.sleep_secs) } else { "off".into() })
-                        .show_ui(ui, |ui| {
-                            for (secs, _) in SLEEP_CHOICES {
-                                ui.selectable_value(&mut self.sleep_secs, *secs, format!("{secs} s"));
-                            }
-                        });
-                });
-                ui.add_space(4.0);
-                ui.add(egui::Slider::new(&mut self.debounce, 0..=8).text("⏱ debounce (ms)"));
-                if ui.add_enabled(!self.pending, egui::Button::new("✅ apply settings")).clicked() {
-                    self.apply_settings();
-                }
-
                 ui.add_space(8.0);
-                if !self.confirm_reset {
-                    if ui.button("♻ factory reset").clicked() {
-                        self.confirm_reset = true;
-                    }
-                } else {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::RED, "Reset keyboard to factory?");
-                        if ui.button("YES").clicked() {
-                            self.confirm_reset = false;
-                            self.pending = true;
-                            self.status = "sending reset…".into();
-                            self.send(Job::FactoryReset);
-                        }
-                        if ui.button("cancel").clicked() {
-                            self.confirm_reset = false;
-                        }
-                    });
-                }
-
-                ui.add_space(16.0);
-                ui.heading("⌨️ Remap");
-                ui.horizontal(|ui| {
-                    ui.label("layer:");
-                    egui::ComboBox::from_id_salt("remap-layer")
-                        .selected_text(if self.remap_layer == 0 { "base" } else { "Fn" }.to_string())
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.remap_layer, 0u8, "base");
-                            ui.selectable_value(&mut self.remap_layer, 1u8, "Fn");
-                        });
-                });
-                ui.text_edit_singleline(&mut self.remap_target);
-                ui.small("target: esc · ctrl+shift+t · none · macro:0 · consumer:0E9");
-                if ui
-                    .add_enabled(
-                        !self.pending && !self.selected.is_empty(),
-                        egui::Button::new("✅ remap selected"),
-                    )
-                    .clicked()
-                {
-                    match remap::parse_target(&self.remap_target) {
-                        Ok(entry) => {
-                            self.pending = true;
-                            self.status = "remapping…".into();
-                            for k in self.selected.iter().copied().collect::<Vec<u8>>() {
-                                self.send(Job::Remap { layer: self.remap_layer, index: k, entry });
-                            }
-                        }
-                        Err(e) => self.status = e,
-                    }
-                }
-
-                ui.add_space(16.0);
-                ui.heading("⏺ Macros");
-                ui.horizontal(|ui| {
-                    ui.label("slot:");
-                    ui.add(egui::DragValue::new(&mut self.macro_slot).range(0..=15));
-                    egui::ComboBox::from_id_salt("macro-mode")
-                        .selected_text(
-                            match self.macro_mode {
-                                2 => "while held",
-                                4 => "until any key",
-                                _ => "run once",
-                            }
-                            .to_string(),
-                        )
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.macro_mode, 1u8, "run once");
-                            ui.selectable_value(&mut self.macro_mode, 2u8, "while held");
-                            ui.selectable_value(&mut self.macro_mode, 4u8, "until any key");
-                        });
-                });
-                ui.text_edit_singleline(&mut self.macro_name);
-                ui.small("name (ASCII)");
-                ui.text_edit_singleline(&mut self.macro_seq);
-                ui.small("h e l l o enter · ctrl+shift+t · wait:300 · ^shift hold");
-                ui.horizontal(|ui| {
-                    if ui.add_enabled(!self.pending, egui::Button::new("💾 save")).clicked() {
-                        self.pending = true;
-                        self.status = "saving macro…".into();
-                        self.send(Job::MacroSet {
-                            slot: self.macro_slot,
-                            name: self.macro_name.clone(),
-                            seq: self.macro_seq.clone(),
-                        });
-                    }
-                    if ui.add_enabled(!self.pending, egui::Button::new("🗑 delete")).clicked() {
-                        self.pending = true;
-                        self.status = "deleting macro…".into();
-                        self.send(Job::MacroDel { slot: self.macro_slot });
-                    }
-                });
-                if ui
-                    .add_enabled(
-                        !self.pending && !self.selected.is_empty(),
-                        egui::Button::new("⌨ assign macro to selected"),
-                    )
-                    .clicked()
-                {
-                    self.pending = true;
-                    self.status = "assigning macro…".into();
-                    for k in self.selected.iter().copied().collect::<Vec<u8>>() {
-                        self.send(Job::MacroAssign {
-                            layer: self.remap_layer,
-                            key: k,
-                            macro_idx: self.macro_slot as u8,
-                            mode: self.macro_mode,
-                        });
-                    }
-                }
-
-                ui.add_space(16.0);
-                ui.heading("🎵 Live");
-                ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_salt("live-anim")
-                        .selected_text(
-                            ["rainbow", "wave", "fire", "solid"]
-                                .get(self.live_anim)
-                                .copied()
-                                .unwrap_or("rainbow")
-                                .to_string(),
-                        )
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.live_anim, 0usize, "rainbow");
-                            ui.selectable_value(&mut self.live_anim, 1usize, "wave");
-                            ui.selectable_value(&mut self.live_anim, 2usize, "fire");
-                            ui.selectable_value(&mut self.live_anim, 3usize, "solid (paint color)");
-                        });
-                    ui.add(egui::DragValue::new(&mut self.live_secs).range(3..=60).suffix(" s"));
-                });
-                if ui
-                    .add_enabled(!self.pending, egui::Button::new("▶ play on keyboard"))
-                    .clicked()
-                {
-                    let anim = match self.live_anim {
-                        1 => live::Anim::Wave,
-                        2 => live::Anim::Fire,
-                        3 => live::Anim::Solid(self.paint),
-                        _ => live::Anim::Rainbow,
-                    };
-                    self.pending = true;
-                    self.status = format!("streaming {}…", anim.name());
-                    self.send(Job::Live { anim, seconds: self.live_secs });
-                }
-
-                ui.add_space(16.0);
-                ui.heading("🎨 Per-key");
-                let mut c = [
-                    self.paint[0] as f32 / 255.0,
-                    self.paint[1] as f32 / 255.0,
-                    self.paint[2] as f32 / 255.0,
-                ];
-                ui.color_edit_button_rgb(&mut c);
-                self.paint = [
-                    (c[0] * 255.0) as u8,
-                    (c[1] * 255.0) as u8,
-                    (c[2] * 255.0) as u8,
-                ];
-                ui.label(format!("{} selected: {:?}", self.selected.len(), key_names(&self.selected)));
-                ui.horizontal(|ui| {
-                    if ui.button("🖌 paint selected").clicked() {
-                        for i in &self.selected {
-                            self.per_key[*i as usize] = self.paint;
-                        }
-                        self.apply_rgb(true);
-                    }
-                    if ui.button("⌫ clear selection").clicked() {
-                        self.selected.clear();
-                    }
-                });
-
-                ui.add_space(16.0);
-                ui.heading("🌈 Themes");
-                ui.horizontal_wrapped(|ui| {
-                    for t in themes::THEMES {
-                        if ui.button(*t).clicked() {
-                            self.apply_theme(t);
-                        }
-                    }
-                });
-                ui.add_space(8.0);
-                if ui.button("⚫ all off").clicked() {
-                    self.per_key = vec![[0, 0, 0]; 90];
-                    self.apply_rgb(false);
-                }
-
-                ui.add_space(16.0);
-                ui.heading("ℹ️ Device");
-                ui.small(self.device.clone());
-                ui.small("Firmware: not exposed over the 2.4G dongle");
             });
         });
 
@@ -701,11 +814,17 @@ fn effect_label(n: u8) -> String {
         .unwrap_or_else(|| format!("{n}  ?"))
 }
 
-fn key_names(selected: &BTreeSet<u8>) -> Vec<&'static str> {
-    KEYS.iter()
+fn selected_names(selected: &BTreeSet<u8>) -> String {
+    let names: Vec<&str> = KEYS
+        .iter()
         .filter(|k| selected.contains(&k.led))
         .map(|k| k.name)
-        .collect()
+        .collect();
+    if names.is_empty() {
+        "(none — click keys on the board)".into()
+    } else {
+        names.join(", ")
+    }
 }
 
 pub fn run() -> Result<(), eframe::Error> {
