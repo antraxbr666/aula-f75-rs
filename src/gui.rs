@@ -643,11 +643,6 @@ impl GuiApp {
                 }
             }
         });
-        ui.add_space(8.0);
-        if ui.button("⚫ all off").clicked() && !self.pending {
-            self.per_key = vec![[0, 0, 0]; 90];
-            self.apply_rgb(true);
-        }
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
