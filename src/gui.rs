@@ -19,7 +19,7 @@ use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
 use crate::tray;
-use crate::{macros, remap};
+use crate::{ipc, macros, remap};
 
 /// ---- worker (device IO) ----
 
@@ -413,10 +413,6 @@ pub struct GuiApp {
     macro_mode: u8,
     // periodic refresh
     last_refresh: Instant,
-    /// Tray service handle; kept alive for the app's lifetime
-    /// (dropping it would stop the tray service).
-    #[allow(dead_code)]
-    tray: Option<tray::TrayHandle>,
 }
 
 impl Default for GuiApp {
@@ -449,7 +445,6 @@ impl Default for GuiApp {
             macro_seq: String::new(),
             macro_mode: 1,
             last_refresh: Instant::now(),
-            tray: None,
         };
         app.send(Job::Read);
         app
@@ -457,11 +452,16 @@ impl Default for GuiApp {
 }
 
 impl GuiApp {
-    fn new(cc: &eframe::CreationContext) -> Self {
-        GuiApp {
-            tray: tray::spawn(&cc.egui_ctx),
-            ..Default::default()
-        }
+    /// `listener` is the control socket bound by `run()`: the tray daemon uses
+    /// it to focus an already-open window instead of launching a second one.
+    fn new(cc: &eframe::CreationContext, listener: std::os::unix::net::UnixListener) -> Self {
+        let ctx = cc.egui_ctx.clone();
+        ipc::watch(listener, move || {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ctx.request_repaint();
+        });
+        GuiApp::default()
     }
 }
 
@@ -1043,7 +1043,18 @@ fn selected_names(selected: &BTreeSet<u8>) -> String {
     }
 }
 
-pub fn run() -> Result<(), eframe::Error> {
+pub fn run() -> anyhow::Result<()> {
+    // The control socket doubles as the single-instance lock: a second GUI
+    // just focuses the live window and exits.
+    let listener = match ipc::bind() {
+        Ok(listener) => listener,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            ipc::request_focus();
+            return Ok(());
+        }
+        Err(e) => return Err(anyhow::anyhow!("control socket: {e}")),
+    };
+
     eframe::run_native(
         "aula-f75",
         eframe::NativeOptions {
@@ -1052,6 +1063,7 @@ pub fn run() -> Result<(), eframe::Error> {
                 .with_icon(tray::window_icon()),
             ..Default::default()
         },
-        Box::new(|cc| Ok(Box::new(GuiApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(GuiApp::new(cc, listener)))),
     )
+    .map_err(|e| anyhow::anyhow!(e.to_string()))
 }

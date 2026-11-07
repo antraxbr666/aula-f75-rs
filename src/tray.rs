@@ -1,14 +1,18 @@
 //! StatusNotifierItem tray (ksni) — resident icon with Show/Quit menu.
 //!
 //! SNI over D-Bus is the protocol quickshell/waybar/KDE host; no GTK, no
-//! XEmbed. The tray NEVER touches window closing: closing the window exits
-//! the app (and the tray with it), exactly like the pre-tray behavior.
+//! XEmbed. This tray lives in the `aula-f75 tray` daemon (`src/daemon.rs`),
+//! which owns the GUI window as a child process: closing the window with the
+//! compositor (niri `Mod+C`, the X button) kills only that child, so the icon
+//! stays and "Show" brings the window back.
 //!
 //! Icon: 64x64 RGBA pre-rendered from `assets/icon.svg` (see AGENTS.md).
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use eframe::egui;
+
+use crate::daemon::Daemon;
 
 /// Pre-rendered 64x64 RGBA (straight alpha) from assets/icon.svg.
 static ICON_RGBA: &[u8] = include_bytes!("../assets/icon-64.rgba");
@@ -39,21 +43,8 @@ fn tray_icon() -> ksni::Icon {
 static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(tray_icon);
 
 pub struct AulaTray {
-    ctx: egui::Context,
-}
-
-/// Focus the main window from any thread.
-fn show_window(ctx: &egui::Context) {
-    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-    ctx.request_repaint();
-}
-
-/// Exit the app from any thread: an uncanceled `Close` on the root
-/// viewport shuts eframe down cleanly (egui 0.29 has no Exit command).
-fn quit_app(ctx: &egui::Context) {
-    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-    ctx.request_repaint();
+    /// Shared with the reaper thread in `daemon::run`.
+    state: Arc<Mutex<Daemon>>,
 }
 
 impl ksni::Tray for AulaTray {
@@ -82,13 +73,22 @@ impl ksni::Tray for AulaTray {
         vec![
             StandardItem {
                 label: "Show".into(),
-                activate: Box::new(|t: &mut Self| show_window(&t.ctx)),
+                activate: Box::new(|t: &mut Self| {
+                    if let Ok(mut daemon) = t.state.lock() {
+                        daemon.show();
+                    }
+                }),
                 ..Default::default()
             }
             .into(),
             StandardItem {
                 label: "Quit".into(),
-                activate: Box::new(|t: &mut Self| quit_app(&t.ctx)),
+                activate: Box::new(|t: &mut Self| {
+                    if let Ok(mut daemon) = t.state.lock() {
+                        daemon.quit();
+                    }
+                    std::process::exit(0);
+                }),
                 ..Default::default()
             }
             .into(),
@@ -101,9 +101,9 @@ impl ksni::Tray for AulaTray {
 pub type TrayHandle = ksni::blocking::Handle<AulaTray>;
 
 /// Spawn the tray service. `None` (warned) when no SNI watcher answers.
-pub fn spawn(ctx: &egui::Context) -> Option<TrayHandle> {
+pub fn spawn(state: Arc<Mutex<Daemon>>) -> Option<TrayHandle> {
     use ksni::blocking::TrayMethods;
-    let tray = AulaTray { ctx: ctx.clone() };
+    let tray = AulaTray { state };
     match tray.spawn() {
         Ok(handle) => Some(handle),
         Err(e) => {

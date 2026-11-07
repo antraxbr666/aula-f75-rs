@@ -1,8 +1,10 @@
 //! aula-f75 — cross-platform configuration tool for the AULA F75 keyboard.
 
+mod daemon;
 mod device;
 mod factory;
 mod gui;
+mod ipc;
 mod keymap;
 mod live;
 mod macros;
@@ -53,6 +55,12 @@ enum Command {
     Selftest,
     /// Launch the graphical interface
     Gui,
+    /// Stay resident in the tray; the window is a child process (close-to-tray)
+    Tray {
+        /// Do not open the window on startup (tray only)
+        #[arg(long)]
+        no_window: bool,
+    },
     /// List key names usable with `key-color`
     Keys,
     /// Paint individual keys: KEY=RRGGBB (e.g. `key-color w=ff0000 a=00ff00`)
@@ -122,9 +130,20 @@ enum MacroCmd {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // The tray daemon and the GUI never talk to the keyboard themselves, so
+    // they are dispatched before the HID stack is even initialized (the
+    // daemon must not open the device — only the GUI process owns it).
+    match &cli.command {
+        Command::Tray { no_window } => return daemon::run(!no_window),
+        Command::Gui => return gui::run(),
+        _ => {}
+    }
+
     let api = HidApi::new().context("failed to initialize HID")?;
 
     match cli.command {
+        Command::Tray { .. } | Command::Gui => unreachable!("handled before HID init"),
         Command::List => device::list(&api),
         Command::Info => info(&api)?,
         Command::Effect { number } => {
@@ -188,7 +207,6 @@ fn main() -> Result<()> {
                 println!("link(0x47):   {:02X?}", link);
             }
         }
-        Command::Gui => gui::run().map_err(|e| anyhow::anyhow!(e.to_string()))?,
         Command::Selftest => {
             let kb = Keyboard::open(&api)?;
             let block = kb.read_led()?;

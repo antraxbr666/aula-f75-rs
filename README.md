@@ -68,7 +68,13 @@ aula-f75 gui
 
 Navbar vertical de ícones à esquerda; cada aba abre no painel direito. O desenho do teclado no centro mostra a **camada custom** (editor) com as cores reais lidas do hardware.
 
-> 🖴 **Bandeja:** ícone residente (StatusNotifierItem; aparece no quickshell, waybar etc.) com menu **Show** (foca a janela) e **Quit** (encerra o app). Fechar a janela encerra o app normalmente (ícone vai junto).
+> 🖴 **Bandeja:** ícone residente (StatusNotifierItem; aparece no quickshell, waybar etc.) com menu **Show** (abre ou foca a janela) e **Quit** (encerra tudo). O ícone vive no daemon `aula-f75 tray`, que roda a janela como **processo filho** — fechar a janela (X, niri `Mod+C`) fecha **só a janela**, o ícone continua e **Show** traz ela de volta.
+
+```bash
+# residente: abre a janela e mantém o ícone depois que ela fecha
+niri: spawn-at-startup "aula-f75" "tray"
+aula-f75 tray --no-window   # só o ícone, a janela abre pelo menu Show
+```
 
 | Ícone | Aba | O que faz |
 |---|---|---|
