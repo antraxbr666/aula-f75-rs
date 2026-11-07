@@ -532,7 +532,9 @@ impl GuiApp {
         ui.separator();
         let remaps = self.active_remaps();
         ui.strong(format!("Active remaps ({})", remaps.len()));
-        if remaps.is_empty() {
+        if self.keymaps.is_none() {
+            ui.small("keymaps not read yet…");
+        } else if remaps.is_empty() {
             ui.small("none — keyboard is at factory state");
         } else {
             egui::Grid::new("active_remaps").num_columns(3).spacing([12.0, 2.0]).show(ui, |ui| {
