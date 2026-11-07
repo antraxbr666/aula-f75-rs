@@ -124,10 +124,10 @@ pub fn label(name: &str) -> &str {
         "lctrl" | "rctrl" => "ctrl",
         "lwin" => "win",
         "lalt" | "ralt" => "alt",
-        "up" => "↑",
-        "down" => "↓",
-        "left" => "←",
-        "right" => "→",
+        "up" => "up",
+        "down" => "dn",
+        "left" => "lt",
+        "right" => "rt",
         other => other,
     }
 }

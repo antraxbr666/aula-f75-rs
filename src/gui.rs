@@ -270,6 +270,9 @@ pub struct GuiApp {
     device: String,
     led: Option<Vec<u8>>,
     lighting: Lighting,
+    /// Effect currently active on the keyboard (from the LED block) — the
+    /// board drawing is only truthful when this is 32 (custom per-key).
+    active_effect: u8,
     per_key: Vec<[u8; 3]>,
     selected: BTreeSet<u8>,
     paint: [u8; 3],
@@ -307,6 +310,7 @@ impl Default for GuiApp {
             device: "—".into(),
             led: None,
             lighting: Lighting::default(),
+            active_effect: 1,
             per_key: vec![[0, 0, 0]; 90],
             selected: BTreeSet::new(),
             paint: [255, 0, 0],
@@ -344,6 +348,7 @@ impl GuiApp {
                     self.battery = battery;
                     self.device = device;
                     let effect = led_block[led::ACTIVE_EFFECT];
+                    self.active_effect = effect;
                     self.lighting.effect = if EFFECTS.iter().any(|(n, _)| *n == effect) { effect } else { 1 };
                     let hw = effect.max(1) as usize;
                     if hw <= 34 {
@@ -760,15 +765,46 @@ impl eframe::App for GuiApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // The 0x02 table only drives the CUSTOM effect; firmware effects
+            // are generated inside the keyboard and are not in that table.
+            if self.active_effect != 32 {
+                ui.horizontal_wrapped(|ui| {
+                    ui.colored_label(
+                        Color32::from_rgb(255, 170, 0),
+                        format!(
+                            "⚡ active effect: {} — rendered by the keyboard itself; the board below shows the per-key CUSTOM table (dimmed)",
+                            effect_label(self.active_effect)
+                        ),
+                    );
+                    if ui
+                        .add_enabled(!self.pending, egui::Button::new("switch to custom"))
+                        .clicked()
+                    {
+                        if let Some(block) = self.led.clone() {
+                            let mut b = block;
+                            b[led::ACTIVE_EFFECT] = 32;
+                            self.pending = true;
+                            self.status = "switching to custom…".into();
+                            self.send(Job::ApplyLed(b));
+                        }
+                    }
+                });
+                ui.add_space(4.0);
+            }
             let (resp, painter) = ui.allocate_painter(Vec2::new(670.0, 290.0), Sense::click());
             let origin = resp.rect.min;
+            let dim = if self.active_effect == 32 { 1.0 } else { 0.35 };
             for key in KEYS {
                 let rect = Rect::from_min_size(
                     pos2(origin.x + key.x as f32, origin.y + key.y as f32),
                     Vec2::new(36.0, 27.0),
                 );
                 let [r, g, b] = self.per_key[key.led as usize];
-                let fill = Color32::from_rgb(r, g, b);
+                let fill = Color32::from_rgb(
+                    (r as f32 * dim) as u8,
+                    (g as f32 * dim) as u8,
+                    (b as f32 * dim) as u8,
+                );
                 let stroke = if self.selected.contains(&key.led) {
                     Stroke::new(2.5_f32, Color32::WHITE)
                 } else {
