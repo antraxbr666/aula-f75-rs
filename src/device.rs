@@ -157,6 +157,11 @@ impl Keyboard {
         bail!("read 0x{:02X} incomplete, missing packets {missing:?}", cmd::read(write_cmd))
     }
 
+    /// Vendor/product id of the open transport.
+    pub fn vid_pid(&self) -> (u16, u16) {
+        (self.vid, self.pid)
+    }
+
     /// Read the 128-byte LED config block.
     pub fn read_led(&self) -> Result<Vec<u8>> {
         let block = self.read_block(cmd::LED, 0, BLOCK_LEN_LED)?;
@@ -172,6 +177,28 @@ impl Keyboard {
     /// Read-modify-write the LED config block.
     pub fn write_led(&self, block: &[u8]) -> Result<()> {
         self.write_block(cmd::LED, 0, block)
+    }
+
+    /// Indexed HID string descriptor (some firmwares store the version here).
+    pub fn indexed_string(&self, index: i32) -> Option<String> {
+        self.dev.get_indexed_string(index).ok().flatten()
+    }
+
+    /// HID string descriptors (manufacturer / product / serial — the
+    /// firmware version often lives in one of them).
+    pub fn strings(&self) -> (Option<String>, Option<String>, Option<String>) {
+        (
+            self.dev.get_manufacturer_string().ok().flatten(),
+            self.dev.get_product_string().ok().flatten(),
+            self.dev.get_serial_number_string().ok().flatten(),
+        )
+    }
+
+    /// Factory reset (command 0x06 — gets NO acknowledgement).
+    pub fn factory_reset(&self, api: &HidApi) -> Result<()> {
+        self.wait_keys_idle(api)?;
+        let pkt = make_packet(0x06, 1, 0, 0, &[1]);
+        self.write_packet(&pkt)
     }
 
     /// Battery percentage (read from the profile block, 0x4A — first byte,

@@ -100,6 +100,7 @@ pub const COLORS: &[(u8, &str)] = &[
 /// Offsets inside the 128-byte LED config block (command 0x04/0x44).
 pub mod led {
     pub const ACTIVE_EFFECT: usize = 10; // hardware effect number
+    pub const DEBOUNCE: usize = 1; // per KB.ini ShowDebounce=0x04000101 (block 4, offset 1, len 1)
     pub const WIN_LOCK: usize = 15; // 0 off, 1 locked
     pub const SIDE_LIGHT: usize = 18; // 0 off, 1 fill, 2 breathing, 3 static
     pub const SLEEP_30S: usize = 24; // sleep timer in 30 s units, 0 = never
@@ -114,4 +115,18 @@ pub mod led {
 
     pub const BRIGHTNESS_MAX: u8 = 9;
     pub const SPEED_MAX: u8 = 4;
+
+    /// Sleep choices exactly as the official app offers them
+    /// (KB.ini SleepUI / SleepHW): seconds <-> 30 s units.
+    pub const SLEEP_CHOICES: &[(u16, u8)] = &[
+        (60, 2),
+        (90, 3),
+        (120, 4),
+        (180, 6),
+        (240, 8),
+        (300, 10),
+        (600, 20),
+        (900, 30),
+        (1200, 40),
+    ];
 }

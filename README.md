@@ -44,6 +44,8 @@ aula-f75 gui
 - 🖌️ Clique para selecionar, **Ctrl+clique** para várias, pinte com o color picker e aplique
 - 💡 Controles de efeito / brilho / velocidade / cor
 - 🌈 Temas com um clique (rainbow, ocean, fire, matrix, sunset, off)
+- ⚙️ **Settings**: sleep (on/off + tempos do app original), debounce, factory reset (com confirmação)
+- ℹ️ Device info (transporte, VID:PID, strings HID)
 - 🔋 Bateria e status no cabeçalho
 - ⚙️ Toda a comunicação HID numa thread separada — a UI nunca trava
 
@@ -73,6 +75,7 @@ cargo build --release    # binário em target/release/aula-f75
 - [x] RGB por tecla + temas
 - [x] Guarda de teclas soltas antes de escrever
 - [x] 🖥️ GUI (egui) com desenho do teclado, pintura por tecla e temas
+- [x] ⚙️ Settings: sleep, debounce, factory reset
 - [ ] 🔀 Remapeamento (comando `0x01`, 504 B/camada)
 - [ ] ⏺️ Macros (comando `0x03`)
 - [ ] 🎵 Iluminação em tempo real / modo música (`0x88`, ~14 fps)

@@ -1,14 +1,16 @@
-//! GUI (egui/eframe): on-screen board, per-key painting, lighting controls.
-//! HID traffic runs on a worker thread so the UI never blocks.
+//! GUI (egui/eframe): on-screen board, per-key painting, lighting controls
+//! and device settings (sleep/debounce/reset). HID traffic runs on a worker
+//! thread so the UI never blocks.
 
 use std::collections::BTreeSet;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Vec2, pos2};
 
 use crate::device::Keyboard;
 use crate::keymap::{KEYS, PLANE};
+use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
 
@@ -18,10 +20,16 @@ enum Job {
     Read,
     ApplyLed(Vec<u8>),
     ApplyRgb { per_key: Vec<[u8; 3]>, set_effect_custom: bool },
+    FactoryReset,
 }
 
 enum Reply {
-    Read { led: Vec<u8>, per_key: Vec<[u8; 3]>, battery: Option<u8> },
+    Read {
+        led: Vec<u8>,
+        per_key: Vec<[u8; 3]>,
+        battery: Option<u8>,
+        device: String,
+    },
     Done(String),
     Error(String),
 }
@@ -38,7 +46,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
         let reply = match job {
             Job::Read => match Keyboard::open(&api) {
                 Ok(kb) => match read_all(&kb) {
-                    Ok((led_block, per_key, battery)) => Reply::Read { led: led_block, per_key, battery },
+                    Ok((led_block, per_key, battery, device)) => Reply::Read { led: led_block, per_key, battery, device },
                     Err(e) => Reply::Error(format!("read failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
@@ -56,6 +64,13 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                     .unwrap_or_else(|e| Reply::Error(format!("write failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
+            Job::FactoryReset => match Keyboard::open(&api) {
+                Ok(kb) => match kb.factory_reset(&api) {
+                    Ok(()) => Reply::Done("factory reset sent (keyboard will reboot)".into()),
+                    Err(e) => Reply::Error(format!("reset failed: {e:#}")),
+                },
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
         };
         if tx.send(reply).is_err() {
             return; // GUI closed
@@ -63,7 +78,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
     }
 }
 
-fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>)> {
+fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>, String)> {
     let led_block = kb.read_led()?;
     let rgb = kb.read_block(cmd::PER_KEY_RGB, 0, PLANE * 3)?;
     let mut per_key = vec![[0u8; 3]; 90];
@@ -71,7 +86,16 @@ fn read_all(kb: &Keyboard) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>)
         *c = [rgb[i], rgb[PLANE + i], rgb[PLANE * 2 + i]];
     }
     let battery = kb.battery().unwrap_or(None);
-    Ok((led_block, per_key, battery))
+    let (m, p, _s) = kb.strings();
+    let device = format!(
+        "{}  ({:04X}:{:04X})\n{} · {}",
+        kb.name,
+        kb.vid_pid().0,
+        kb.vid_pid().1,
+        m.unwrap_or_default(),
+        p.unwrap_or_default(),
+    );
+    Ok((led_block, per_key, battery, device))
 }
 
 fn apply_rgb(kb: &Keyboard, api: &hidapi::HidApi, per_key: &[[u8; 3]], set_effect_custom: bool) -> anyhow::Result<()> {
@@ -108,11 +132,19 @@ pub struct GuiApp {
     status: String,
     connected: bool,
     battery: Option<u8>,
+    device: String,
     led: Option<Vec<u8>>,
     lighting: Lighting,
     per_key: Vec<[u8; 3]>,
     selected: BTreeSet<u8>,
     paint: [u8; 3],
+    // settings
+    sleep_on: bool,
+    sleep_secs: u16,
+    debounce: u8,
+    confirm_reset: bool,
+    // periodic refresh
+    last_refresh: Instant,
 }
 
 impl Default for GuiApp {
@@ -127,11 +159,17 @@ impl Default for GuiApp {
             status: "connecting…".into(),
             connected: false,
             battery: None,
+            device: "—".into(),
             led: None,
             lighting: Lighting::default(),
             per_key: vec![[0, 0, 0]; 90],
             selected: BTreeSet::new(),
             paint: [255, 0, 0],
+            sleep_on: false,
+            sleep_secs: 300,
+            debounce: 0,
+            confirm_reset: false,
+            last_refresh: Instant::now(),
         };
         app.send(Job::Read);
         app
@@ -147,9 +185,10 @@ impl GuiApp {
         while let Ok(reply) = self.rx.try_recv() {
             self.pending = false;
             match reply {
-                Reply::Read { led: led_block, per_key, battery } => {
+                Reply::Read { led: led_block, per_key, battery, device } => {
                     self.connected = true;
                     self.battery = battery;
+                    self.device = device;
                     let effect = led_block[led::ACTIVE_EFFECT];
                     self.lighting.effect = if EFFECTS.iter().any(|(n, _)| *n == effect) { effect } else { 1 };
                     let hw = effect.max(1) as usize;
@@ -161,6 +200,15 @@ impl GuiApp {
                             self.lighting.color = led_block[off + 1] & 0x0F;
                         }
                     }
+                    // settings
+                    let sleep_hw = led_block[led::SLEEP_30S];
+                    self.sleep_on = sleep_hw != 0;
+                    self.sleep_secs = SLEEP_CHOICES
+                        .iter()
+                        .find(|(_, hw)| *hw == sleep_hw)
+                        .map(|(secs, _)| *secs)
+                        .unwrap_or(300);
+                    self.debounce = led_block[led::DEBOUNCE];
                     self.per_key = per_key;
                     self.led = Some(led_block);
                     self.status = "connected".into();
@@ -193,6 +241,24 @@ impl GuiApp {
         self.send(Job::ApplyLed(b));
     }
 
+    fn apply_settings(&mut self) {
+        let Some(block) = self.led.clone() else { return };
+        let mut b = block;
+        b[led::DEBOUNCE] = self.debounce;
+        b[led::SLEEP_30S] = if self.sleep_on {
+            SLEEP_CHOICES
+                .iter()
+                .find(|(secs, _)| *secs == self.sleep_secs)
+                .map(|(_, hw)| *hw)
+                .unwrap_or(10)
+        } else {
+            0
+        };
+        self.pending = true;
+        self.status = "applying…".into();
+        self.send(Job::ApplyLed(b));
+    }
+
     fn apply_rgb(&mut self, set_effect_custom: bool) {
         self.pending = true;
         self.status = "applying…".into();
@@ -217,6 +283,18 @@ impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
 
+        // keep battery/status fresh even when idle
+        if !self.pending && self.last_refresh.elapsed() >= Duration::from_secs(60) {
+            self.last_refresh = Instant::now();
+            self.pending = true;
+            self.send(Job::Read);
+        }
+        if self.pending {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        } else {
+            ctx.request_repaint_after(Duration::from_secs(15));
+        }
+
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("⌨️ AULA F75");
@@ -237,70 +315,115 @@ impl eframe::App for GuiApp {
         });
 
         egui::SidePanel::right("controls").show(ctx, |ui| {
-            ui.add_space(8.0);
-            ui.heading("💡 Lighting");
-            egui::ComboBox::from_id_salt("effect")
-                .selected_text(effect_label(self.lighting.effect))
-                .show_ui(ui, |ui| {
-                    for (n, name) in EFFECTS {
-                        ui.selectable_value(&mut self.lighting.effect, *n, format!("{n}  {name}"));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.heading("💡 Lighting");
+                egui::ComboBox::from_id_salt("effect")
+                    .selected_text(effect_label(self.lighting.effect))
+                    .show_ui(ui, |ui| {
+                        for (n, name) in EFFECTS {
+                            ui.selectable_value(&mut self.lighting.effect, *n, format!("{n}  {name}"));
+                        }
+                    });
+                ui.add_space(6.0);
+                ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀️ brightness"));
+                ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
+                egui::ComboBox::from_id_salt("color")
+                    .selected_text(format!("🎨 {}", COLORS[(self.lighting.color as usize).min(7)].1))
+                    .show_ui(ui, |ui| {
+                        for (n, name) in COLORS {
+                            ui.selectable_value(&mut self.lighting.color, *n, format!("{n}  {name}"));
+                        }
+                    });
+                ui.add_space(6.0);
+                if ui.add_enabled(!self.pending, egui::Button::new("✅ apply lighting")).clicked() {
+                    self.apply_lighting();
+                }
+
+                ui.add_space(16.0);
+                ui.heading("⚙️ Settings");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.sleep_on, "💤 Sleep");
+                    egui::ComboBox::from_id_salt("sleep")
+                        .selected_text(if self.sleep_on { format!("{} s", self.sleep_secs) } else { "off".into() })
+                        .show_ui(ui, |ui| {
+                            for (secs, _) in SLEEP_CHOICES {
+                                ui.selectable_value(&mut self.sleep_secs, *secs, format!("{secs} s"));
+                            }
+                        });
+                });
+                ui.add_space(4.0);
+                ui.add(egui::Slider::new(&mut self.debounce, 0..=8).text("⏱ debounce (ms)"));
+                if ui.add_enabled(!self.pending, egui::Button::new("✅ apply settings")).clicked() {
+                    self.apply_settings();
+                }
+
+                ui.add_space(8.0);
+                if !self.confirm_reset {
+                    if ui.button("♻ factory reset").clicked() {
+                        self.confirm_reset = true;
+                    }
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::RED, "Reset keyboard to factory?");
+                        if ui.button("YES").clicked() {
+                            self.confirm_reset = false;
+                            self.pending = true;
+                            self.status = "sending reset…".into();
+                            self.send(Job::FactoryReset);
+                        }
+                        if ui.button("cancel").clicked() {
+                            self.confirm_reset = false;
+                        }
+                    });
+                }
+
+                ui.add_space(16.0);
+                ui.heading("🎨 Per-key");
+                let mut c = [
+                    self.paint[0] as f32 / 255.0,
+                    self.paint[1] as f32 / 255.0,
+                    self.paint[2] as f32 / 255.0,
+                ];
+                ui.color_edit_button_rgb(&mut c);
+                self.paint = [
+                    (c[0] * 255.0) as u8,
+                    (c[1] * 255.0) as u8,
+                    (c[2] * 255.0) as u8,
+                ];
+                ui.label(format!("{} selected: {:?}", self.selected.len(), key_names(&self.selected)));
+                ui.horizontal(|ui| {
+                    if ui.button("🖌 paint selected").clicked() {
+                        for i in &self.selected {
+                            self.per_key[*i as usize] = self.paint;
+                        }
+                        self.apply_rgb(true);
+                    }
+                    if ui.button("⌫ clear selection").clicked() {
+                        self.selected.clear();
                     }
                 });
-            ui.add_space(6.0);
-            ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀️ brightness"));
-            ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
-            egui::ComboBox::from_id_salt("color")
-                .selected_text(format!("🎨 {}", COLORS[(self.lighting.color as usize).min(7)].1))
-                .show_ui(ui, |ui| {
-                    for (n, name) in COLORS {
-                        ui.selectable_value(&mut self.lighting.color, *n, format!("{n}  {name}"));
+
+                ui.add_space(16.0);
+                ui.heading("🌈 Themes");
+                ui.horizontal_wrapped(|ui| {
+                    for t in themes::THEMES {
+                        if ui.button(*t).clicked() {
+                            self.apply_theme(t);
+                        }
                     }
                 });
-            ui.add_space(6.0);
-            if ui.add_enabled(!self.pending, egui::Button::new("✅ apply lighting")).clicked() {
-                self.apply_lighting();
-            }
+                ui.add_space(8.0);
+                if ui.button("⚫ all off").clicked() {
+                    self.per_key = vec![[0, 0, 0]; 90];
+                    self.apply_rgb(false);
+                }
 
-            ui.add_space(16.0);
-            ui.heading("🎨 Per-key");
-            let mut c = [
-                self.paint[0] as f32 / 255.0,
-                self.paint[1] as f32 / 255.0,
-                self.paint[2] as f32 / 255.0,
-            ];
-            ui.color_edit_button_rgb(&mut c);
-            self.paint = [
-                (c[0] * 255.0) as u8,
-                (c[1] * 255.0) as u8,
-                (c[2] * 255.0) as u8,
-            ];
-            ui.label(format!("{} selected: {:?}", self.selected.len(), key_names(&self.selected)));
-            ui.horizontal(|ui| {
-                if ui.button("🖌 paint selected").clicked() {
-                    for i in &self.selected {
-                        self.per_key[*i as usize] = self.paint;
-                    }
-                    self.apply_rgb(true);
-                }
-                if ui.button("⌫ clear selection").clicked() {
-                    self.selected.clear();
-                }
+                ui.add_space(16.0);
+                ui.heading("ℹ️ Device");
+                ui.small(self.device.clone());
+                ui.small("Firmware: not exposed over the 2.4G dongle");
             });
-
-            ui.add_space(16.0);
-            ui.heading("🌈 Themes");
-            ui.horizontal_wrapped(|ui| {
-                for t in themes::THEMES {
-                    if ui.button(*t).clicked() {
-                        self.apply_theme(t);
-                    }
-                }
-            });
-            ui.add_space(8.0);
-            if ui.button("⚫ all off").clicked() {
-                self.per_key = vec![[0, 0, 0]; 90];
-                self.apply_rgb(false);
-            }
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -368,7 +491,7 @@ pub fn run() -> Result<(), eframe::Error> {
         "aula-f75",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1010.0, 400.0]),
+                .with_inner_size([1010.0, 440.0]),
             ..Default::default()
         },
         Box::new(|_cc| Ok(Box::new(GuiApp::default()))),

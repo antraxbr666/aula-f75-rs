@@ -36,6 +36,8 @@ enum Command {
     Color { value: String },
     /// Battery percentage (experimental)
     Battery,
+    /// HID string descriptors (debug)
+    Strings,
     /// Dump the raw LED config block (hex)
     Dump,
     /// Read the LED block and write it back unchanged (tests the write path)
@@ -114,6 +116,12 @@ fn main() -> Result<()> {
                 let hex: Vec<String> = chunk.iter().map(|b| format!("{b:02X}")).collect();
                 println!("{:04X}: {}", i * 16, hex.join(" "));
             }
+            if let Ok(prof) = kb.read_block(protocol::cmd::PROFILE, 0, 2) {
+                println!("profile(0x4A): {:02X?}", prof);
+            }
+            if let Ok(link) = kb.read_block(0x07, 0, 2) {
+                println!("link(0x47):   {:02X?}", link);
+            }
         }
         Command::Gui => gui::run().map_err(|e| anyhow::anyhow!(e.to_string()))?,
         Command::Selftest => {
@@ -174,6 +182,18 @@ fn main() -> Result<()> {
             led_block[led::ACTIVE_EFFECT] = 32;
             kb.write_led(&led_block)?;
             println!("theme '{name}' applied");
+        }
+        Command::Strings => {
+            let kb = Keyboard::open(&api)?;
+            let (m, p, s) = kb.strings();
+            println!("manufacturer: {:?}", m);
+            println!("product:      {:?}", p);
+            println!("serial:       {:?}", s);
+            for i in 1..=8i32 {
+                if let Some(v) = kb.indexed_string(i) {
+                    println!("indexed[{i}]:   {v:?}");
+                }
+            }
         }
         Command::Battery => {
             let kb = Keyboard::open(&api)?;
