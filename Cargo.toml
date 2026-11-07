@@ -1,0 +1,14 @@
+[package]
+name = "aula-f75"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform (Windows/Linux) configuration tool for the AULA F75 keyboard"
+
+[dependencies]
+hidapi = "2"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+
+[profile.release]
+strip = true
+lto = true
