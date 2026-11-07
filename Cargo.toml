@@ -8,6 +8,7 @@ description = "Cross-platform (Windows/Linux) configuration tool for the AULA F7
 hidapi = "2"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+eframe = "0.29"
 
 [profile.release]
 strip = true

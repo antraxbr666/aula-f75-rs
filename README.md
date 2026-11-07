@@ -31,7 +31,21 @@ aula-f75 key-color w=ff0000 a=ff0000 s=ff0000 d=ff0000   # 🔴 pinte teclas
 aula-f75 preset rainbow       # 🌈 tema: rainbow, ocean, fire, matrix, sunset, off
 aula-f75 dump                 # 📄 bloco LED bruto (hex)
 aula-f75 selftest             # ✅ lê → regrava idêntico → confere
+aula-f75 gui                  # 🖥️ interface gráfica (egui)
 ```
+
+## 🖥️ GUI
+
+```
+aula-f75 gui
+```
+
+- 🎨 **Teclado desenhado na tela** com as cores reais de cada tecla (lidas do hardware)
+- 🖌️ Clique para selecionar, **Ctrl+clique** para várias, pinte com o color picker e aplique
+- 💡 Controles de efeito / brilho / velocidade / cor
+- 🌈 Temas com um clique (rainbow, ocean, fire, matrix, sunset, off)
+- 🔋 Bateria e status no cabeçalho
+- ⚙️ Toda a comunicação HID numa thread separada — a UI nunca trava
 
 ## 🐧 Linux: permissão sem sudo
 
@@ -58,10 +72,10 @@ cargo build --release    # binário em target/release/aula-f75
 - [x] LED config (efeito, brilho, velocidade, cor)
 - [x] RGB por tecla + temas
 - [x] Guarda de teclas soltas antes de escrever
+- [x] 🖥️ GUI (egui) com desenho do teclado, pintura por tecla e temas
 - [ ] 🔀 Remapeamento (comando `0x01`, 504 B/camada)
 - [ ] ⏺️ Macros (comando `0x03`)
 - [ ] 🎵 Iluminação em tempo real / modo música (`0x88`, ~14 fps)
-- [ ] 🖥️ GUI (egui/iced) com desenho do teclado
 - [ ] 🔗 Transporte cabo `258a:010c`
 
 ## 📄 Licença

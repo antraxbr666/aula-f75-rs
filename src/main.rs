@@ -1,6 +1,7 @@
 //! aula-f75 — cross-platform configuration tool for the AULA F75 keyboard.
 
 mod device;
+mod gui;
 mod keymap;
 mod protocol;
 mod themes;
@@ -39,6 +40,8 @@ enum Command {
     Dump,
     /// Read the LED block and write it back unchanged (tests the write path)
     Selftest,
+    /// Launch the graphical interface
+    Gui,
     /// List key names usable with `key-color`
     Keys,
     /// Paint individual keys: KEY=RRGGBB (e.g. `key-color w=ff0000 a=00ff00`)
@@ -112,6 +115,7 @@ fn main() -> Result<()> {
                 println!("{:04X}: {}", i * 16, hex.join(" "));
             }
         }
+        Command::Gui => gui::run().map_err(|e| anyhow::anyhow!(e.to_string()))?,
         Command::Selftest => {
             let kb = Keyboard::open(&api)?;
             let block = kb.read_led()?;
