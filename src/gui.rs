@@ -413,7 +413,9 @@ pub struct GuiApp {
     macro_mode: u8,
     // periodic refresh
     last_refresh: Instant,
-    /// Resident SNI tray service; `None` = no tray host (X exits the app).
+    /// Tray service handle; kept alive for the app's lifetime
+    /// (dropping it would stop the tray service).
+    #[allow(dead_code)]
     tray: Option<tray::TrayHandle>,
 }
 
@@ -451,6 +453,15 @@ impl Default for GuiApp {
         };
         app.send(Job::Read);
         app
+    }
+}
+
+impl GuiApp {
+    fn new(cc: &eframe::CreationContext) -> Self {
+        GuiApp {
+            tray: tray::spawn(&cc.egui_ctx),
+            ..Default::default()
+        }
     }
 }
 
@@ -869,29 +880,9 @@ impl GuiApp {
     }
 }
 
-impl GuiApp {
-    fn new(cc: &eframe::CreationContext) -> Self {
-        GuiApp {
-            tray: tray::spawn(&cc.egui_ctx),
-            ..Default::default()
-        }
-    }
-}
-
 impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
-
-        // window X hides to tray (app keeps running); tray Quit passes the
-        // close through (QUIT flag) and the app exits; without a tray host,
-        // the default close path also exits
-        if ctx.input(|i| i.viewport().close_requested())
-            && !tray::quit_requested()
-            && self.tray.is_some()
-        {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-        }
 
         // keep battery/status fresh; when disconnected, retry every 5 s
         // (the keyboard takes a few seconds to come back after a factory

@@ -1,12 +1,11 @@
 //! StatusNotifierItem tray (ksni) — resident icon with Show/Quit menu.
 //!
-//! SNI over D-Bus is the protocol quickshell/waybar host; no GTK, no XEmbed.
-//! Menu actions wake the egui loop cross-thread through a cloned
-//! `egui::Context` (thread-safe by design).
+//! SNI over D-Bus is the protocol quickshell/waybar/KDE host; no GTK, no
+//! XEmbed. The tray NEVER touches window closing: closing the window exits
+//! the app (and the tray with it), exactly like the pre-tray behavior.
 //!
 //! Icon: 64x64 RGBA pre-rendered from `assets/icon.svg` (see AGENTS.md).
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
 
 use eframe::egui;
@@ -39,30 +38,20 @@ fn tray_icon() -> ksni::Icon {
 
 static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(tray_icon);
 
-/// Set by the tray's Quit item: the next `close_requested` frame must NOT be
-/// cancelled — letting `Close` through on the root viewport exits eframe.
-static QUIT: AtomicBool = AtomicBool::new(false);
-
-pub fn quit_requested() -> bool {
-    QUIT.load(Ordering::Relaxed)
-}
-
 pub struct AulaTray {
     ctx: egui::Context,
 }
 
-/// Show (and focus) the main window from any thread.
+/// Focus the main window from any thread.
 fn show_window(ctx: &egui::Context) {
     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     ctx.request_repaint();
 }
 
-/// Exit the app from any thread: mark quit, then request a root-viewport
-/// close — egui 0.29 has no `Exit` command; an uncanceled `Close` on the
-/// root viewport shuts the app down cleanly.
+/// Exit the app from any thread: an uncanceled `Close` on the root
+/// viewport shuts eframe down cleanly (egui 0.29 has no Exit command).
 fn quit_app(ctx: &egui::Context) {
-    QUIT.store(true, Ordering::Relaxed);
     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     ctx.request_repaint();
 }
@@ -108,17 +97,17 @@ impl ksni::Tray for AulaTray {
 }
 
 /// Handle to the running tray service; keep it alive for the app's lifetime
-/// (dropping the process unregisters the D-Bus name).
+/// (process exit unregisters the D-Bus name).
 pub type TrayHandle = ksni::blocking::Handle<AulaTray>;
 
-/// Spawn the tray service. `None` (warned) when no SNI watcher answers —
-/// then the window's X must exit the app instead of hiding to nowhere.
+/// Spawn the tray service. `None` (warned) when no SNI watcher answers.
 pub fn spawn(ctx: &egui::Context) -> Option<TrayHandle> {
     use ksni::blocking::TrayMethods;
-    match (AulaTray { ctx: ctx.clone() }).spawn() {
+    let tray = AulaTray { ctx: ctx.clone() };
+    match tray.spawn() {
         Ok(handle) => Some(handle),
         Err(e) => {
-            eprintln!("warning: tray unavailable ({e}); window close will exit");
+            eprintln!("warning: tray unavailable ({e})");
             None
         }
     }

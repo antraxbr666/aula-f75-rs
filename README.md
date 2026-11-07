@@ -68,7 +68,7 @@ aula-f75 gui
 
 Navbar vertical de ícones à esquerda; cada aba abre no painel direito. O desenho do teclado no centro mostra a **camada custom** (editor) com as cores reais lidas do hardware.
 
-> 🖴 **Bandeja:** fechar a janela (**X**) só *esconde* — o app segue rodando no ícone da bandeja (StatusNotifierItem; aparece no quickshell, waybar etc.). O menu de contexto tem **Show** (reabre e foca a janela) e **Quit** (encerra de verdade).
+> 🖴 **Bandeja:** ícone residente (StatusNotifierItem; aparece no quickshell, waybar etc.) com menu **Show** (foca a janela) e **Quit** (encerra o app). Fechar a janela encerra o app normalmente (ícone vai junto).
 
 | Ícone | Aba | O que faz |
 |---|---|---|
@@ -178,7 +178,7 @@ aula-f75 keys                # ⌨️ nomes de teclas + índice LED + x/y
 - [x] ⏺️ Macros (`0x03`, 512 B) com gravação, atribuição e exclusão
 - [x] 🎵 Iluminação em tempo real (`0x88`, ~14 fps, anti-flicker)
 - [x] 🧠 `AGENTS.md` — referência completa do protocolo para desenvolvimento
-- [x] 🖴 Ícone na bandeja (SNI/ksni) com Show/Quit — X esconde, Quit encerra
+- [x] 🖴 Ícone na bandeja (SNI/ksni) com Show/Quit
 - [ ] 🔗 Transporte cabo `258a:010c` (usage page `0xFF00`, feature report 520 B)
 - [ ] 🐧 Validação final no Linux (udev/hidraw, Bluetooth)
 - [ ] ⏺️ Listar macros gravadas na GUI (hoje só via CLI)

@@ -453,16 +453,17 @@ src/
 - Board drawing = editor for the custom RGB layer. Keys with an active
   remap in the selected layer get an orange stroke; selection = white
   stroke; Ctrl-click adds to selection.
-- **Tray (ksni/SNI, `src/tray.rs`)**: the window's X HIDES to tray — `update()`
-  catches `close_requested`, sends `CancelClose` + `Visible(false)`; the app
-  keeps running (worker thread alive). The tray menu's Show sends
-  `Visible(true)` + `Focus` and Quit sets an atomic flag and sends `Close`
-  WITHOUT canceling — an uncanceled `Close` on the root viewport is the
-  clean exit path in egui 0.29 (there is no `Exit` command). Tray actions run
-  on the ksni D-Bus thread and wake the UI via a cloned `egui::Context`
-  (thread-safe; `send_viewport_cmd` + `request_repaint`). If no SNI watcher
-  answers (no bar), `tray::spawn` returns None and the X exits the app
-  normally — never hide a window to a nonexistent tray. Icon bytes are a
+- **Tray (ksni/SNI, `src/tray.rs`)**: resident icon with Show/Quit menu.
+  The tray does NOT touch window closing — closing the window (X,
+  niri Mod+C, …) exits the app and the tray with it, the pre-tray
+  behavior (close-to-tray was tried and reverted: winit cannot hide a
+  window on Wayland — `set_visible` is a no-op — and destroy/recreate
+  schemes broke closing; do not resurrect without a plan the owner
+  approves). Show sends `Visible(true)`+`Focus` (focuses the live window);
+  Quit sends an uncanceled `Close` on the root viewport — the clean exit
+  path in egui 0.29 (there is no `Exit` command). Tray actions run on the
+  ksni D-Bus thread and wake the UI via a cloned `egui::Context`
+  (thread-safe; `send_viewport_cmd` + `request_repaint`). Icon bytes are a
   pre-rendered 64x64 RGBA (`assets/icon-64.rgba`, straight alpha for egui,
   rotated to ARGB32 for ksni) — regenerate with `resvg --width 64 --height
   64 assets/icon.svg /tmp/icon.png && magick /tmp/icon.png -depth 8
