@@ -31,6 +31,7 @@ enum Job {
     MacroSet { slot: usize, name: String, seq: String },
     MacroAssign { layer: u8, key: u8, macro_idx: u8, mode: u8 },
     MacroDel { slot: usize },
+    RestoreKey { layer: u8, index: u8 },
     RestoreKeymaps,
 }
 
@@ -157,6 +158,22 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 })()
                 .map(Reply::Done)
                 .unwrap_or_else(|e| Reply::Error(format!("delete failed: {e:#}"))),
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::RestoreKey { layer, index } => match open_kb(&mut api) {
+                Ok(kb) => (|| -> anyhow::Result<String> {
+                    let fac: &[u8; 504] = if layer == 0 { &factory::BASE } else { &factory::FN };
+                    let o = index as usize * 4;
+                    let mut block = kb.read_keymap(layer)?;
+                    block[o..o + 4].copy_from_slice(&fac[o..o + 4]);
+                    kb.write_keymap(&api, layer, &block)?;
+                    Ok(format!(
+                        "{} restored to factory",
+                        remap::matrix_name(index).unwrap_or("?")
+                    ))
+                })()
+                .map(Reply::Done)
+                .unwrap_or_else(|e| Reply::Error(format!("restore failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::RestoreKeymaps => match open_kb(&mut api) {
@@ -537,7 +554,8 @@ impl GuiApp {
         } else if remaps.is_empty() {
             ui.small("none — keyboard is at factory state");
         } else {
-            egui::Grid::new("active_remaps").num_columns(3).spacing([12.0, 2.0]).show(ui, |ui| {
+            let mut revert = Vec::new();
+            egui::Grid::new("active_remaps").num_columns(4).spacing([12.0, 2.0]).show(ui, |ui| {
                 for (layer, idx) in &remaps {
                     let Some(km) = &self.keymaps else { break };
                     let o = *idx as usize * 4;
@@ -545,9 +563,21 @@ impl GuiApp {
                     ui.small(if *layer == 0 { "base" } else { "Fn" });
                     ui.small(remap::matrix_name(*idx).unwrap_or("?"));
                     ui.small(remap::entry_desc(e));
+                    if ui
+                        .add_enabled(!self.pending, egui::Button::new("undo").small())
+                        .on_hover_text("revert this key to factory")
+                        .clicked()
+                    {
+                        revert.push((*layer, *idx));
+                    }
                     ui.end_row();
                 }
             });
+            for (layer, idx) in revert {
+                self.pending = true;
+                self.status = "reverting to factory…".into();
+                self.send(Job::RestoreKey { layer, index: idx });
+            }
             ui.add_space(4.0);
             if ui.button("undo all (restore factory keymaps)").clicked() && !self.pending {
                 self.pending = true;
