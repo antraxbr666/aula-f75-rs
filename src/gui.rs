@@ -44,6 +44,11 @@ enum Reply {
         keymaps: [Vec<u8>; 2],
     },
     Done(String),
+    /// A keymap layer was written; `block` is the final layer content so the
+    /// GUI can update its state immediately (board markers, remap list)
+    /// without waiting for the follow-up hardware re-read (which can fail
+    /// transiently on the 2.4G dongle and leave stale UI state).
+    KeymapsUpdated { msg: String, layer: u8, block: Vec<u8> },
     Error(String),
 }
 
@@ -96,17 +101,20 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::Remap { layer, index, entry } => match open_kb(&mut api) {
-                Ok(kb) => (|| -> anyhow::Result<String> {
+                Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
                     let mut block = kb.read_keymap(layer)?;
                     block[index as usize * 4..index as usize * 4 + 4].copy_from_slice(&entry);
                     kb.write_keymap(&api, layer, &block)?;
-                    Ok(format!(
-                        "{} -> {}",
-                        remap::matrix_name(index).unwrap_or("?"),
-                        remap::entry_desc(&entry)
+                    Ok((
+                        format!(
+                            "{} -> {}",
+                            remap::matrix_name(index).unwrap_or("?"),
+                            remap::entry_desc(&entry)
+                        ),
+                        block,
                     ))
                 })()
-                .map(|m| Reply::Done(format!("remapped {m}")))
+                .map(|(m, block)| Reply::KeymapsUpdated { msg: format!("remapped {m}"), layer, block })
                 .unwrap_or_else(|e| Reply::Error(format!("remap failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -126,7 +134,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::MacroAssign { layer, key, macro_idx, mode } => match open_kb(&mut api) {
-                Ok(kb) => (|| -> anyhow::Result<String> {
+                Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
                     let store = macros::Store::parse(&kb.read_macros()?);
                     match store.macros.get(macro_idx as usize) {
                         Some(m) if !m.events.is_empty() => {}
@@ -136,13 +144,16 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                     let entry = [0x03, mode, 1, macro_idx];
                     block[key as usize * 4..key as usize * 4 + 4].copy_from_slice(&entry);
                     kb.write_keymap(&api, layer, &block)?;
-                    Ok(format!(
-                        "{} -> {}",
-                        remap::matrix_name(key).unwrap_or("?"),
-                        remap::entry_desc(&entry)
+                    Ok((
+                        format!(
+                            "{} -> {}",
+                            remap::matrix_name(key).unwrap_or("?"),
+                            remap::entry_desc(&entry)
+                        ),
+                        block,
                     ))
                 })()
-                .map(|m| Reply::Done(format!("assigned {m}")))
+                .map(|(m, block)| Reply::KeymapsUpdated { msg: format!("assigned {m}"), layer, block })
                 .unwrap_or_else(|e| Reply::Error(format!("assign failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -161,28 +172,40 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::RestoreKey { layer, index } => match open_kb(&mut api) {
-                Ok(kb) => (|| -> anyhow::Result<String> {
+                Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
                     let fac: &[u8; 504] = if layer == 0 { &factory::BASE } else { &factory::FN };
                     let o = index as usize * 4;
                     let mut block = kb.read_keymap(layer)?;
                     block[o..o + 4].copy_from_slice(&fac[o..o + 4]);
                     kb.write_keymap(&api, layer, &block)?;
-                    Ok(format!(
-                        "{} restored to factory",
-                        remap::matrix_name(index).unwrap_or("?")
+                    Ok((
+                        format!("{} restored to factory", remap::matrix_name(index).unwrap_or("?")),
+                        block,
                     ))
                 })()
-                .map(Reply::Done)
+                .map(|(m, block)| Reply::KeymapsUpdated { msg: m, layer, block })
                 .unwrap_or_else(|e| Reply::Error(format!("restore failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::RestoreKeymaps => match open_kb(&mut api) {
-                Ok(kb) => (|| -> anyhow::Result<String> {
+                Ok(kb) => (|| -> anyhow::Result<()> {
                     kb.write_keymap(&api, 0, &factory::BASE)?;
                     kb.write_keymap(&api, 1, &factory::FN)?;
-                    Ok("factory keymaps restored".into())
+                    Ok(())
                 })()
-                .map(Reply::Done)
+                .map(|()| {
+                    // both layers changed: report layer 0, then return layer 1
+                    let _ = tx.send(Reply::KeymapsUpdated {
+                        msg: "factory keymaps restored".into(),
+                        layer: 0,
+                        block: factory::BASE.to_vec(),
+                    });
+                    Reply::KeymapsUpdated {
+                        msg: "factory keymaps restored".into(),
+                        layer: 1,
+                        block: factory::FN.to_vec(),
+                    }
+                })
                 .unwrap_or_else(|e| Reply::Error(format!("restore failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -416,6 +439,16 @@ impl GuiApp {
                 }
                 Reply::Done(msg) => {
                     self.status = msg;
+                    self.send(Job::Read); // re-sync from hardware
+                }
+                Reply::KeymapsUpdated { msg, layer, block } => {
+                    self.status = msg;
+                    // apply the layer the worker just wrote, immediately:
+                    // board markers and the remap list stay truthful even if
+                    // the follow-up read below fails on a flaky dongle
+                    if let Some(km) = &mut self.keymaps {
+                        km[layer as usize] = block;
+                    }
                     self.send(Job::Read); // re-sync from hardware
                 }
                 Reply::Error(e) => {
