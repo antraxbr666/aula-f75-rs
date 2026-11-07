@@ -1,4 +1,4 @@
-//! GUI (egui/eframe): on-screen board, per-key painting, lighting controls
+//! GUI (egui/eframe): on-screen board, themes, lighting controls
 //! and device settings (sleep/debounce/reset). HID traffic runs on a worker
 //! thread so the UI never blocks.
 //!
@@ -216,7 +216,6 @@ enum Section {
     Remap,
     Macros,
     Live,
-    PerKey,
     Themes,
     Settings,
     Device,
@@ -229,7 +228,6 @@ impl Section {
             Section::Remap => "⌨",
             Section::Macros => "⏺",
             Section::Live => "🎵",
-            Section::PerKey => "🎨",
             Section::Themes => "🌈",
             Section::Settings => "⚙",
             Section::Device => "ℹ",
@@ -242,19 +240,17 @@ impl Section {
             Section::Remap => "Remap",
             Section::Macros => "Macros",
             Section::Live => "Live",
-            Section::PerKey => "Per-key",
             Section::Themes => "Themes",
             Section::Settings => "Settings",
             Section::Device => "Device",
         }
     }
 
-    const ALL: [Section; 8] = [
+    const ALL: [Section; 7] = [
         Section::Lighting,
         Section::Remap,
         Section::Macros,
         Section::Live,
-        Section::PerKey,
         Section::Themes,
         Section::Settings,
         Section::Device,
@@ -586,8 +582,23 @@ impl GuiApp {
                     ui.selectable_value(&mut self.live_anim, 0usize, "rainbow");
                     ui.selectable_value(&mut self.live_anim, 1usize, "wave");
                     ui.selectable_value(&mut self.live_anim, 2usize, "fire");
-                    ui.selectable_value(&mut self.live_anim, 3usize, "solid (paint color)");
+                    ui.selectable_value(&mut self.live_anim, 3usize, "solid");
                 });
+            if self.live_anim == 3 {
+                // color for the solid animation (lived in the removed
+                // Per-key section; now shown only when it is relevant)
+                let mut c = [
+                    self.paint[0] as f32 / 255.0,
+                    self.paint[1] as f32 / 255.0,
+                    self.paint[2] as f32 / 255.0,
+                ];
+                ui.color_edit_button_rgb(&mut c);
+                self.paint = [
+                    (c[0] * 255.0) as u8,
+                    (c[1] * 255.0) as u8,
+                    (c[2] * 255.0) as u8,
+                ];
+            }
             ui.add(egui::DragValue::new(&mut self.live_secs).range(3..=60).suffix(" s"));
         });
         if ui
@@ -606,36 +617,9 @@ impl GuiApp {
         }
     }
 
-    fn ui_per_key(&mut self, ui: &mut egui::Ui) {
-        ui.heading("🎨 Per-key");
-        ui.small("Board = your custom layer. Applying switches the keyboard to it.");
-        let mut c = [
-            self.paint[0] as f32 / 255.0,
-            self.paint[1] as f32 / 255.0,
-            self.paint[2] as f32 / 255.0,
-        ];
-        ui.color_edit_button_rgb(&mut c);
-        self.paint = [
-            (c[0] * 255.0) as u8,
-            (c[1] * 255.0) as u8,
-            (c[2] * 255.0) as u8,
-        ];
-        ui.small(format!("selected: {}", selected_names(&self.selected)));
-        ui.horizontal(|ui| {
-            if ui.button("🖌 paint selected").clicked() && !self.pending {
-                for i in &self.selected {
-                    self.per_key[*i as usize] = self.paint;
-                }
-                self.apply_rgb(true);
-            }
-            if ui.button("⌫ clear selection").clicked() {
-                self.selected.clear();
-            }
-        });
-    }
-
     fn ui_themes(&mut self, ui: &mut egui::Ui) {
         ui.heading("🌈 Themes");
+        ui.small("Themes paint the custom layer; applying switches the keyboard to it.");
         ui.horizontal_wrapped(|ui| {
             for t in themes::THEMES {
                 if ui.button(*t).clicked() && !self.pending {
@@ -762,7 +746,6 @@ impl eframe::App for GuiApp {
                     Section::Remap => self.ui_remap(ui),
                     Section::Macros => self.ui_macros(ui),
                     Section::Live => self.ui_live(ui),
-                    Section::PerKey => self.ui_per_key(ui),
                     Section::Themes => self.ui_themes(ui),
                     Section::Settings => self.ui_settings(ui),
                     Section::Device => self.ui_device(ui),

@@ -83,7 +83,7 @@ cargo build --release    # binário em target/release/aula-f75
 - [x] LED config (efeito, brilho, velocidade, cor)
 - [x] RGB por tecla + temas
 - [x] Guarda de teclas soltas antes de escrever
-- [x] 🖥️ GUI (egui) com desenho do teclado, pintura por tecla e temas
+- [x] 🖥️ GUI (egui) com desenho do teclado, navbar de seções e temas
 - [x] ⚙️ Settings: sleep, debounce, factory reset
 - [x] 🔀 Remapeamento (comando `0x01`, 504 B/camada)
 - [x] ⏺️ Macros (comando `0x03`)
