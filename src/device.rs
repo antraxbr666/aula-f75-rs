@@ -22,6 +22,8 @@ const READ_TIMEOUT_MS: i32 = 500;
 pub struct Keyboard {
     dev: HidDevice,
     pub name: &'static str,
+    vid: u16,
+    pid: u16,
 }
 
 /// Print every supported device currently connected.
@@ -56,14 +58,14 @@ impl Keyboard {
                         let dev = api
                             .open_path(info.path())
                             .context("failed to open device")?;
-                        return Ok(Keyboard { dev, name });
+                        return Ok(Keyboard { dev, name, vid, pid });
                     }
                     fallback.get_or_insert(info.path().to_owned());
                 }
             }
             if let Some(path) = fallback {
                 let dev = api.open_path(&path).context("failed to open device")?;
-                return Ok(Keyboard { dev, name });
+                return Ok(Keyboard { dev, name, vid, pid });
             }
         }
         bail!("no AULA F75 found via 2.4G dongle or Bluetooth (wired mode is not supported yet)")
@@ -177,5 +179,62 @@ impl Keyboard {
     pub fn battery(&self) -> Result<Option<u8>> {
         let block = self.read_block(cmd::PROFILE, 0, BLOCK_LEN_PROFILE)?;
         Ok(block.first().copied())
+    }
+
+    /// Wait until no keys are held and the keyboard has been idle for a
+    /// while, so a configuration write cannot make the keyboard drop a
+    /// key-release report (which would leave a key auto-repeating).
+    pub fn wait_keys_idle(&self, api: &HidApi) -> Result<()> {
+        // Find the boot-keyboard collection of the same physical device.
+        let kbd = api
+            .device_list()
+            .find(|i| {
+                i.vendor_id() == self.vid
+                    && i.product_id() == self.pid
+                    && i.usage_page() == 0x0001
+                    && i.usage() == 0x06
+            })
+            .map(|i| api.open_path(i.path()).context("failed to open keyboard collection"));
+        let Some(kbd) = kbd else {
+            eprintln!("warning: keyboard collection not found, skipping idle check");
+            return Ok(());
+        };
+        let kbd = kbd?;
+        kbd.set_blocking_mode(false)
+            .context("cannot set non-blocking mode")?;
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let quiet_needed = Duration::from_millis(400);
+        let mut quiet_start = std::time::Instant::now();
+        let mut held = false;
+        let mut buf = [0u8; 32];
+
+        loop {
+            match kbd.read(&mut buf) {
+                Ok(0) => {} // no data (non-blocking)
+                Ok(_) => {
+                    // Boot report: [report-id?][mods][reserved][k1..k6]
+                    let keys = &buf[2..buf.len().min(8)];
+                    let now_held = keys.iter().any(|k| *k != 0 && *k != 0x01); // 0x01 quirk = ErrorRollOver
+                    if now_held {
+                        held = true;
+                        quiet_start = std::time::Instant::now();
+                    } else if held {
+                        // release observed — restart the quiet window
+                        held = false;
+                        quiet_start = std::time::Instant::now();
+                    }
+                }
+                Err(_) => return Ok(()), // read error: don't block the command
+            }
+            if !held && quiet_start.elapsed() >= quiet_needed {
+                return Ok(());
+            }
+            if std::time::Instant::now() > deadline {
+                eprintln!("warning: keys still held (or reports keep coming), proceeding anyway");
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }

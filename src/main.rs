@@ -1,7 +1,9 @@
 //! aula-f75 — cross-platform configuration tool for the AULA F75 keyboard.
 
 mod device;
+mod keymap;
 mod protocol;
+mod themes;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -37,6 +39,15 @@ enum Command {
     Dump,
     /// Read the LED block and write it back unchanged (tests the write path)
     Selftest,
+    /// List key names usable with `key-color`
+    Keys,
+    /// Paint individual keys: KEY=RRGGBB (e.g. `key-color w=ff0000 a=00ff00`)
+    KeyColor {
+        #[arg(value_name = "KEY=RRGGBB")]
+        assignments: Vec<String>,
+    },
+    /// Apply a built-in per-key theme: rainbow, ocean, fire, matrix, sunset, off
+    Preset { name: String },
 }
 
 fn main() -> Result<()> {
@@ -53,6 +64,7 @@ fn main() -> Result<()> {
             let kb = Keyboard::open(&api)?;
             let mut block = kb.read_led()?;
             block[led::ACTIVE_EFFECT] = number;
+            kb.wait_keys_idle(&api)?;
             kb.write_led(&block)?;
             println!("effect set to {number} ({})", effect_name(number));
         }
@@ -64,6 +76,7 @@ fn main() -> Result<()> {
             let mut block = kb.read_led()?;
             let hw = block[led::ACTIVE_EFFECT].max(1);
             block[led::effect_settings(hw)] = value;
+            kb.wait_keys_idle(&api)?;
             kb.write_led(&block)?;
             println!("brightness set to {value}");
         }
@@ -76,6 +89,7 @@ fn main() -> Result<()> {
             let hw = block[led::ACTIVE_EFFECT].max(1);
             let off = led::effect_settings(hw) + 1;
             block[off] = (value << 4) | (block[off] & 0x0F);
+            kb.wait_keys_idle(&api)?;
             kb.write_led(&block)?;
             println!("speed set to {value}");
         }
@@ -86,6 +100,7 @@ fn main() -> Result<()> {
             let hw = block[led::ACTIVE_EFFECT].max(1);
             let off = led::effect_settings(hw) + 1;
             block[off] = (block[off] & 0xF0) | color;
+            kb.wait_keys_idle(&api)?;
             kb.write_led(&block)?;
             println!("color set to {color} ({})", COLORS[color as usize].1);
         }
@@ -100,6 +115,7 @@ fn main() -> Result<()> {
         Command::Selftest => {
             let kb = Keyboard::open(&api)?;
             let block = kb.read_led()?;
+            kb.wait_keys_idle(&api)?;
             kb.write_led(&block)?;
             let reread = kb.read_led()?;
             if reread == block {
@@ -114,6 +130,46 @@ fn main() -> Result<()> {
                     .collect();
                 println!("selftest: read-back differs at offsets {diff:?}");
             }
+        }
+        Command::Keys => {
+            for k in keymap::KEYS {
+                println!("{:<10} led={:<3} x={:<4} y={}", k.name, k.led, k.x, k.y);
+            }
+        }
+        Command::KeyColor { assignments } => {
+            if assignments.is_empty() {
+                bail!("nothing to do: pass KEY=RRGGBB pairs, e.g. `key-color w=ff0000 a=00ff00`");
+            }
+            let mut colors = Vec::new();
+            for a in &assignments {
+                let (name, hex) = a
+                    .split_once('=')
+                    .with_context(|| format!("bad assignment '{a}', expected KEY=RRGGBB"))?;
+                let rgb = parse_hex_color(hex)?;
+                colors.push((name.to_string(), rgb));
+            }
+            let block = keymap::build_block(&colors).map_err(anyhow::Error::msg)?;
+            let kb = Keyboard::open(&api)?;
+            kb.wait_keys_idle(&api)?;
+            kb.write_block(protocol::cmd::PER_KEY_RGB, 0, &block)?;
+            // Effect 32 = custom per-key table; make it active so it shows at once.
+            let mut led_block = kb.read_led()?;
+            led_block[led::ACTIVE_EFFECT] = 32;
+            kb.write_led(&led_block)?;
+            println!("painted {} keys, effect set to custom (32)", colors.len());
+        }
+        Command::Preset { name } => {
+            if !themes::is_valid(&name) {
+                bail!("unknown theme '{name}'; valid: {:?}", themes::THEMES);
+            }
+            let block = themes::block(&name).map_err(anyhow::Error::msg)?;
+            let kb = Keyboard::open(&api)?;
+            kb.wait_keys_idle(&api)?;
+            kb.write_block(protocol::cmd::PER_KEY_RGB, 0, &block)?;
+            let mut led_block = kb.read_led()?;
+            led_block[led::ACTIVE_EFFECT] = 32;
+            kb.write_led(&led_block)?;
+            println!("theme '{name}' applied");
         }
         Command::Battery => {
             let kb = Keyboard::open(&api)?;
@@ -167,6 +223,15 @@ fn color_name(c: u8) -> &'static str {
         .get(c as usize)
         .map(|(_, n)| *n)
         .unwrap_or("unknown")
+}
+
+fn parse_hex_color(hex: &str) -> Result<[u8; 3]> {
+    let h = hex.trim_start_matches('#');
+    if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        bail!("bad color '{hex}', expected RRGGBB hex like ff0000");
+    }
+    let v = u32::from_str_radix(h, 16).context("bad hex")?;
+    Ok([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
 fn parse_color(value: &str) -> Result<u8> {
