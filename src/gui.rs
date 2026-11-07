@@ -13,6 +13,7 @@ use crate::keymap::{KEYS, PLANE};
 use crate::protocol::led::SLEEP_CHOICES;
 use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
+use crate::{live, macros, remap};
 
 /// ---- worker (device IO) ----
 
@@ -21,6 +22,11 @@ enum Job {
     ApplyLed(Vec<u8>),
     ApplyRgb { per_key: Vec<[u8; 3]>, set_effect_custom: bool },
     FactoryReset,
+    Remap { layer: u8, index: u8, entry: [u8; 4] },
+    MacroSet { slot: usize, name: String, seq: String },
+    MacroAssign { layer: u8, key: u8, macro_idx: u8, mode: u8 },
+    MacroDel { slot: usize },
+    Live { anim: live::Anim, seconds: u64 },
 }
 
 enum Reply {
@@ -68,6 +74,78 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 Ok(kb) => match kb.factory_reset(&api) {
                     Ok(()) => Reply::Done("factory reset sent (keyboard will reboot)".into()),
                     Err(e) => Reply::Error(format!("reset failed: {e:#}")),
+                },
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::Remap { layer, index, entry } => match Keyboard::open(&api) {
+                Ok(kb) => (|| -> anyhow::Result<String> {
+                    let mut block = kb.read_keymap(layer)?;
+                    block[index as usize * 4..index as usize * 4 + 4].copy_from_slice(&entry);
+                    kb.write_keymap(&api, layer, &block)?;
+                    Ok(format!(
+                        "{} -> {}",
+                        remap::matrix_name(index).unwrap_or("?"),
+                        remap::entry_desc(&entry)
+                    ))
+                })()
+                .map(|m| Reply::Done(format!("remapped {m}")))
+                .unwrap_or_else(|e| Reply::Error(format!("remap failed: {e:#}"))),
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::MacroSet { slot, name, seq } => match Keyboard::open(&api) {
+                Ok(kb) => (|| -> anyhow::Result<String> {
+                    if !name.is_ascii() || name.len() > 32 {
+                        anyhow::bail!("macro name must be ASCII, max 32 bytes");
+                    }
+                    let events = macros::parse_sequence(&seq).map_err(anyhow::Error::msg)?;
+                    let mut store = macros::Store::parse(&kb.read_macros()?);
+                    store.set(slot, macros::Macro { name: name.clone(), events });
+                    kb.write_macros(&api, &store.build())?;
+                    Ok(format!("macro {slot} '{name}' saved"))
+                })()
+                .map(Reply::Done)
+                .unwrap_or_else(|e| Reply::Error(format!("macro save failed: {e:#}"))),
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::MacroAssign { layer, key, macro_idx, mode } => match Keyboard::open(&api) {
+                Ok(kb) => (|| -> anyhow::Result<String> {
+                    let store = macros::Store::parse(&kb.read_macros()?);
+                    match store.macros.get(macro_idx as usize) {
+                        Some(m) if !m.events.is_empty() => {}
+                        _ => anyhow::bail!("macro {macro_idx} does not exist (save it first)"),
+                    }
+                    let mut block = kb.read_keymap(layer)?;
+                    let entry = [0x03, mode, 1, macro_idx];
+                    block[key as usize * 4..key as usize * 4 + 4].copy_from_slice(&entry);
+                    kb.write_keymap(&api, layer, &block)?;
+                    Ok(format!(
+                        "{} -> {}",
+                        remap::matrix_name(key).unwrap_or("?"),
+                        remap::entry_desc(&entry)
+                    ))
+                })()
+                .map(|m| Reply::Done(format!("assigned {m}")))
+                .unwrap_or_else(|e| Reply::Error(format!("assign failed: {e:#}"))),
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::MacroDel { slot } => match Keyboard::open(&api) {
+                Ok(kb) => (|| -> anyhow::Result<String> {
+                    let mut store = macros::Store::parse(&kb.read_macros()?);
+                    if slot >= store.macros.len() {
+                        anyhow::bail!("macro {slot} does not exist");
+                    }
+                    store.delete(slot);
+                    kb.write_macros(&api, &store.build())?;
+                    Ok(format!("macro {slot} deleted"))
+                })()
+                .map(Reply::Done)
+                .unwrap_or_else(|e| Reply::Error(format!("delete failed: {e:#}"))),
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::Live { anim, seconds } => match Keyboard::open(&api) {
+                Ok(kb) => match live::play(&kb, &api, &anim, seconds) {
+                    Ok(n) => Reply::Done(format!("live '{}' done: {n} frames", anim.name())),
+                    Err(e) => Reply::Error(format!("live failed: {e:#}")),
                 },
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
@@ -143,6 +221,15 @@ pub struct GuiApp {
     sleep_secs: u16,
     debounce: u8,
     confirm_reset: bool,
+    // remap / macros / live
+    remap_layer: u8,
+    remap_target: String,
+    macro_slot: usize,
+    macro_name: String,
+    macro_seq: String,
+    macro_mode: u8,
+    live_anim: usize,
+    live_secs: u64,
     // periodic refresh
     last_refresh: Instant,
 }
@@ -169,6 +256,14 @@ impl Default for GuiApp {
             sleep_secs: 300,
             debounce: 0,
             confirm_reset: false,
+            remap_layer: 0,
+            remap_target: String::new(),
+            macro_slot: 0,
+            macro_name: String::new(),
+            macro_seq: String::new(),
+            macro_mode: 1,
+            live_anim: 0,
+            live_secs: 10,
             last_refresh: Instant::now(),
         };
         app.send(Job::Read);
@@ -376,6 +471,131 @@ impl eframe::App for GuiApp {
                             self.confirm_reset = false;
                         }
                     });
+                }
+
+                ui.add_space(16.0);
+                ui.heading("⌨️ Remap");
+                ui.horizontal(|ui| {
+                    ui.label("layer:");
+                    egui::ComboBox::from_id_salt("remap-layer")
+                        .selected_text(if self.remap_layer == 0 { "base" } else { "Fn" }.to_string())
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.remap_layer, 0u8, "base");
+                            ui.selectable_value(&mut self.remap_layer, 1u8, "Fn");
+                        });
+                });
+                ui.text_edit_singleline(&mut self.remap_target);
+                ui.small("target: esc · ctrl+shift+t · none · macro:0 · consumer:0E9");
+                if ui
+                    .add_enabled(
+                        !self.pending && !self.selected.is_empty(),
+                        egui::Button::new("✅ remap selected"),
+                    )
+                    .clicked()
+                {
+                    match remap::parse_target(&self.remap_target) {
+                        Ok(entry) => {
+                            self.pending = true;
+                            self.status = "remapping…".into();
+                            for k in self.selected.iter().copied().collect::<Vec<u8>>() {
+                                self.send(Job::Remap { layer: self.remap_layer, index: k, entry });
+                            }
+                        }
+                        Err(e) => self.status = e,
+                    }
+                }
+
+                ui.add_space(16.0);
+                ui.heading("⏺ Macros");
+                ui.horizontal(|ui| {
+                    ui.label("slot:");
+                    ui.add(egui::DragValue::new(&mut self.macro_slot).range(0..=15));
+                    egui::ComboBox::from_id_salt("macro-mode")
+                        .selected_text(
+                            match self.macro_mode {
+                                2 => "while held",
+                                4 => "until any key",
+                                _ => "run once",
+                            }
+                            .to_string(),
+                        )
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.macro_mode, 1u8, "run once");
+                            ui.selectable_value(&mut self.macro_mode, 2u8, "while held");
+                            ui.selectable_value(&mut self.macro_mode, 4u8, "until any key");
+                        });
+                });
+                ui.text_edit_singleline(&mut self.macro_name);
+                ui.small("name (ASCII)");
+                ui.text_edit_singleline(&mut self.macro_seq);
+                ui.small("h e l l o enter · ctrl+shift+t · wait:300 · ^shift hold");
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!self.pending, egui::Button::new("💾 save")).clicked() {
+                        self.pending = true;
+                        self.status = "saving macro…".into();
+                        self.send(Job::MacroSet {
+                            slot: self.macro_slot,
+                            name: self.macro_name.clone(),
+                            seq: self.macro_seq.clone(),
+                        });
+                    }
+                    if ui.add_enabled(!self.pending, egui::Button::new("🗑 delete")).clicked() {
+                        self.pending = true;
+                        self.status = "deleting macro…".into();
+                        self.send(Job::MacroDel { slot: self.macro_slot });
+                    }
+                });
+                if ui
+                    .add_enabled(
+                        !self.pending && !self.selected.is_empty(),
+                        egui::Button::new("⌨ assign macro to selected"),
+                    )
+                    .clicked()
+                {
+                    self.pending = true;
+                    self.status = "assigning macro…".into();
+                    for k in self.selected.iter().copied().collect::<Vec<u8>>() {
+                        self.send(Job::MacroAssign {
+                            layer: self.remap_layer,
+                            key: k,
+                            macro_idx: self.macro_slot as u8,
+                            mode: self.macro_mode,
+                        });
+                    }
+                }
+
+                ui.add_space(16.0);
+                ui.heading("🎵 Live");
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt("live-anim")
+                        .selected_text(
+                            ["rainbow", "wave", "fire", "solid"]
+                                .get(self.live_anim)
+                                .copied()
+                                .unwrap_or("rainbow")
+                                .to_string(),
+                        )
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.live_anim, 0usize, "rainbow");
+                            ui.selectable_value(&mut self.live_anim, 1usize, "wave");
+                            ui.selectable_value(&mut self.live_anim, 2usize, "fire");
+                            ui.selectable_value(&mut self.live_anim, 3usize, "solid (paint color)");
+                        });
+                    ui.add(egui::DragValue::new(&mut self.live_secs).range(3..=60).suffix(" s"));
+                });
+                if ui
+                    .add_enabled(!self.pending, egui::Button::new("▶ play on keyboard"))
+                    .clicked()
+                {
+                    let anim = match self.live_anim {
+                        1 => live::Anim::Wave,
+                        2 => live::Anim::Fire,
+                        3 => live::Anim::Solid(self.paint),
+                        _ => live::Anim::Rainbow,
+                    };
+                    self.pending = true;
+                    self.status = format!("streaming {}…", anim.name());
+                    self.send(Job::Live { anim, seconds: self.live_secs });
                 }
 
                 ui.add_space(16.0);

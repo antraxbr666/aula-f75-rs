@@ -100,19 +100,45 @@ impl Keyboard {
         for (idx, chunk) in chunks.iter().enumerate() {
             let pkt = make_packet(cmd, count, idx as u8, sub, chunk);
             self.write_packet(&pkt)?;
-            // Wait for the echo acknowledgement.
-            match self.read_packet()? {
-                Some(echo) if echo.get(2) == Some(&count) && echo.get(3) == Some(&(idx as u8)) => {
-                    if echo[2] & 0x80 != 0 {
-                        bail!("keyboard reported error (packet count has bit 7 set) for packet {idx}: {echo:02X?}");
+            // Wait for the echo acknowledgement, skipping stale packets
+            // left in the queue by an earlier multi-packet read (the
+            // keyboard sometimes retransmits parts of a reply after we
+            // already finished reassembling it).
+            let mut echoed = false;
+            for _try in 0..16 {
+                match self.read_packet()? {
+                    Some(echo)
+                        if echo.get(1) == Some(&cmd)
+                            && echo.get(2) == Some(&count)
+                            && echo.get(3) == Some(&(idx as u8)) =>
+                    {
+                        if echo[2] & 0x80 != 0 {
+                            bail!("keyboard reported error (packet count has bit 7 set) for packet {idx}: {echo:02X?}");
+                        }
+                        echoed = true;
+                        break;
                     }
+                    Some(_) => continue, // stale reply packet — drain it
+                    None => bail!("no acknowledgement for packet {idx} (keyboard asleep? press a key and retry)"),
                 }
-                Some(other) => bail!("unexpected acknowledgement for packet {idx}: {other:02X?}"),
-                None => bail!("no acknowledgement for packet {idx} (keyboard asleep? press a key and retry)"),
+            }
+            if !echoed {
+                bail!("no acknowledgement for packet {idx} within retry budget");
             }
             thread::sleep(WRITE_GAP);
         }
         Ok(())
+    }
+
+    /// Discard any packets still queued (duplicates of a finished read).
+    fn drain(&self) {
+        let mut buf = [0u8; PACKET_LEN + 1];
+        for _ in 0..64 {
+            match self.dev.read_timeout(&mut buf, 0) {
+                Ok(0) | Err(_) => return,
+                Ok(_) => {}
+            }
+        }
     }
 
     /// Read a whole block of `expected_len` bytes, reassembling reply
@@ -142,6 +168,7 @@ impl Keyboard {
                 out[start..end].copy_from_slice(&pkt[5..5 + (end - start)]);
                 have[idx as usize] = true;
                 if have.iter().all(|h| *h) {
+                    self.drain(); // drop duplicate tail packets
                     return Ok(out);
                 }
             }
@@ -206,6 +233,43 @@ impl Keyboard {
     pub fn battery(&self) -> Result<Option<u8>> {
         let block = self.read_block(cmd::PROFILE, 0, BLOCK_LEN_PROFILE)?;
         Ok(block.first().copied())
+    }
+
+    /// Read a keymap layer (command 0x41, 504 bytes = 126 entries x 4).
+    /// `layer`: 0 = base, 1 = Fn.
+    pub fn read_keymap(&self, layer: u8) -> Result<Vec<u8>> {
+        self.read_block(cmd::KEYMAP, layer, BLOCK_LEN_KEYMAP)
+    }
+
+    /// Write a keymap layer (flash write — keys must be idle).
+    pub fn write_keymap(&self, api: &HidApi, layer: u8, block: &[u8]) -> Result<()> {
+        self.wait_keys_idle(api)?;
+        self.write_block(cmd::KEYMAP, layer, block)
+    }
+
+    /// Read the macro store (command 0x43, block 0, 512 bytes).
+    pub fn read_macros(&self) -> Result<Vec<u8>> {
+        self.read_block(cmd::MACRO, 0, BLOCK_LEN_MACRO)
+    }
+
+    /// Write the macro store (flash write — keys must be idle).
+    pub fn write_macros(&self, api: &HidApi, block: &[u8]) -> Result<()> {
+        self.wait_keys_idle(api)?;
+        self.write_block(cmd::MACRO, 0, block)
+    }
+
+    /// Send one real-time lighting frame (command 0x88). No acknowledgement
+    /// comes back (bit 7 commands get no echo), so nothing is verified; a
+    /// 5 ms gap between packets keeps frames from being lost.
+    pub fn send_realtime(&self, sub: u8, data: &[u8]) -> Result<()> {
+        let chunks: Vec<&[u8]> = data.chunks(PAYLOAD_MAX).collect();
+        let count = chunks.len() as u8;
+        for (idx, chunk) in chunks.iter().enumerate() {
+            let pkt = make_packet(cmd::REALTIME, count, idx as u8, sub, chunk);
+            self.write_packet(&pkt)?;
+            thread::sleep(Duration::from_millis(realtime::PACKET_GAP_MS));
+        }
+        Ok(())
     }
 
     /// Wait until no keys are held and the keyboard has been idle for a

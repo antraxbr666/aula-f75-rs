@@ -25,6 +25,8 @@ pub mod cmd {
     pub const LED: u8 = 0x04; // 128-byte LED config block
     pub const PALETTE: u8 = 0x09; // 490 bytes, 23 palettes x 7 colors
     pub const PROFILE: u8 = 0x0A; // 1-2 bytes, first byte likely battery %
+    /// Real-time lighting (bit 7 set: no echo/ack, not stored in flash).
+    pub const REALTIME: u8 = 0x88;
 
     pub const fn read(write_cmd: u8) -> u8 {
         write_cmd | 0x40
@@ -34,6 +36,25 @@ pub mod cmd {
 /// Expected block sizes per command (for read reassembly).
 pub const BLOCK_LEN_LED: usize = 128;
 pub const BLOCK_LEN_PROFILE: usize = 2;
+pub const BLOCK_LEN_KEYMAP: usize = 504; // 126 entries x 4 bytes, sub = layer
+pub const BLOCK_LEN_MACRO: usize = 512; // store block 0
+
+/// Real-time lighting (command 0x88, sub in the packet's high nibble).
+pub mod realtime {
+    /// Whole board in one solid color: payload = [R, G, B].
+    pub const SUB_SOLID: u8 = 2;
+    /// Per-key groups: `R G B count idx…` repeated, <= 200 bytes total;
+    /// keys not listed go dark.
+    pub const SUB_GROUPS: u8 = 1;
+
+    /// Gap between packets of one frame. 0-1 ms: nothing shows; 2-3 ms:
+    /// choppy (lost frames); 5 ms: smooth (~14 fps at 9 packets/frame).
+    pub const PACKET_GAP_MS: u64 = 5;
+    /// Target frame period (~14 fps); the board holds a frame until the
+    /// next one arrives and falls back to its own effect ~1.5-2 s after
+    /// the last frame.
+    pub const FRAME_PERIOD_MS: u64 = 70;
+}
 
 /// 8-bit additive checksum over bytes 0..=18.
 pub fn checksum(bytes: &[u8]) -> u8 {

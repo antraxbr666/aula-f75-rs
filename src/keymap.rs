@@ -3,9 +3,12 @@
 //! on-screen board drawing) and the LED matrix index used by the per-key
 //! RGB table (command 0x02, 378 bytes planar R[126] G[126] B[126]).
 //!
-//! Note: the community protocol doc says the hardware swaps the meaning of
-//! indices 53 and 59 relative to KB.ini labels (53 = RAlt, 59 = Fn); for
-//! lighting purposes the KB.ini mapping is used as-is.
+//! Note on indices 53/59: the community keymap.py claims the hardware holds
+//! RAlt at 53 and Fn at 59, but the keyboard's OWN factory keymap (read from
+//! command 0x41 on real hardware) holds the Fn entry (type 0x0D) at 53 and
+//! the RCtrl modifier at 59 — matching the official KB.ini labels, which are
+//! used here. The same index addresses the per-key RGB table (0x02) and the
+//! keymap table (0x01).
 
 pub struct Key {
     pub name: &'static str,

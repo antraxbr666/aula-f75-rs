@@ -29,6 +29,12 @@ aula-f75 battery              # 🔋 bateria (experimental)
 aula-f75 keys                 # ⌨️ nomes de teclas para o key-color
 aula-f75 key-color w=ff0000 a=ff0000 s=ff0000 d=ff0000   # 🔴 pinte teclas
 aula-f75 preset rainbow       # 🌈 tema: rainbow, ocean, fire, matrix, sunset, off
+aula-f75 remap 0              # ⌨️ mostra o keymap (0 = base, 1 = Fn)
+aula-f75 remap 0 capslock=esc # 🔀 remapeia (esc, ctrl+shift+t, none, macro:0…)
+aula-f75 macro list           # ⏺️ macros gravados no teclado
+aula-f75 macro set 0 hello "h , i , enter"        # ⏺️ cria macro no slot 0
+aula-f75 macro assign pgup 0  # ⌨️ liga o macro à tecla (modos 1/2/4)
+aula-f75 live rainbow 15      # 🎵 animação em tempo real (~14 fps)
 aula-f75 dump                 # 📄 bloco LED bruto (hex)
 aula-f75 selftest             # ✅ lê → regrava idêntico → confere
 aula-f75 gui                  # 🖥️ interface gráfica (egui)
@@ -45,6 +51,9 @@ aula-f75 gui
 - 💡 Controles de efeito / brilho / velocidade / cor
 - 🌈 Temas com um clique (rainbow, ocean, fire, matrix, sunset, off)
 - ⚙️ **Settings**: sleep (on/off + tempos do app original), debounce, factory reset (com confirmação)
+- ⌨️ **Remap**: selecione teclas no desenho e remapeie (tecla, combo, `none`, macro)
+- ⏺️ **Macros**: crie, apague e atribua macros a teclas (`ctrl+shift+t`, `wait:300`, `^shift`)
+- 🎵 **Live**: animações em tempo real no teclado (rainbow, wave, fire, cor sólida)
 - ℹ️ Device info (transporte, VID:PID, strings HID)
 - 🔋 Bateria e status no cabeçalho
 - ⚙️ Toda a comunicação HID numa thread separada — a UI nunca trava
@@ -76,9 +85,9 @@ cargo build --release    # binário em target/release/aula-f75
 - [x] Guarda de teclas soltas antes de escrever
 - [x] 🖥️ GUI (egui) com desenho do teclado, pintura por tecla e temas
 - [x] ⚙️ Settings: sleep, debounce, factory reset
-- [ ] 🔀 Remapeamento (comando `0x01`, 504 B/camada)
-- [ ] ⏺️ Macros (comando `0x03`)
-- [ ] 🎵 Iluminação em tempo real / modo música (`0x88`, ~14 fps)
+- [x] 🔀 Remapeamento (comando `0x01`, 504 B/camada)
+- [x] ⏺️ Macros (comando `0x03`)
+- [x] 🎵 Iluminação em tempo real / modo música (`0x88`, ~14 fps)
 - [ ] 🔗 Transporte cabo `258a:010c`
 
 ## 📄 Licença

@@ -3,7 +3,10 @@
 mod device;
 mod gui;
 mod keymap;
+mod live;
+mod macros;
 mod protocol;
+mod remap;
 mod themes;
 
 use anyhow::{bail, Context, Result};
@@ -53,6 +56,59 @@ enum Command {
     },
     /// Apply a built-in per-key theme: rainbow, ocean, fire, matrix, sunset, off
     Preset { name: String },
+    /// Show a keymap layer (no args) or remap keys: KEY=TARGET pairs.
+    /// Targets: key (esc), combo (ctrl+shift+t), none, macro:IDX[:mode],
+    /// consumer:HEX, special:HEX, fnfunc:B1.B2.B3
+    Remap {
+        /// 0 = base layer, 1 = Fn layer
+        #[arg(default_value_t = 0)]
+        layer: u8,
+        /// KEY=TARGET pairs, e.g. capslock=esc  f1=ctrl+shift+t
+        #[arg(value_name = "KEY=TARGET")]
+        assignments: Vec<String>,
+    },
+    /// Create, list, assign and delete macros
+    Macro {
+        #[command(subcommand)]
+        cmd: MacroCmd,
+    },
+    /// Stream a real-time lighting animation for N seconds: rainbow, wave,
+    /// fire, or a solid color #RRGGBB
+    Live {
+        anim: String,
+        /// how long to stream frames
+        #[arg(default_value_t = 10)]
+        seconds: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum MacroCmd {
+    /// List macros stored on the keyboard
+    List,
+    /// Create/replace macro INDEX: `macro set 0 hello "h , e , l , l , o , enter"`
+    Set {
+        index: usize,
+        /// macro name (ASCII, shows in the official app)
+        name: String,
+        /// sequence: keys (`enter`), combos (`ctrl+t`), holds (`^shift`), waits (`wait:200`)
+        sequence: Vec<String>,
+    },
+    /// Bind a macro to a key: keymap entry [03, mode, count, index]
+    Assign {
+        key: String,
+        index: usize,
+        /// 1 = run COUNT times, 2 = repeat while held, 4 = repeat until any key
+        #[arg(default_value_t = 1)]
+        mode: u8,
+        #[arg(default_value_t = 1)]
+        count: u8,
+        /// 0 = base layer, 1 = Fn layer
+        #[arg(default_value_t = 0)]
+        layer: u8,
+    },
+    /// Delete macro INDEX (following macros shift down)
+    Del { index: usize },
 }
 
 fn main() -> Result<()> {
@@ -201,6 +257,123 @@ fn main() -> Result<()> {
                 Some(p) => println!("battery: {p}% (experimental reading)"),
                 None => println!("battery: no reply"),
             }
+        }
+        Command::Remap { layer, assignments } => {
+            if layer > 3 {
+                bail!("layer must be 0-3 (0 = base, 1 = Fn)");
+            }
+            let kb = Keyboard::open(&api)?;
+            let mut block = kb.read_keymap(layer)?;
+            if assignments.is_empty() {
+                println!("keymap layer {layer}:");
+                for (idx, name) in remap::MATRIX {
+                    let e = &block[*idx as usize * 4..*idx as usize * 4 + 4];
+                    println!("  {:<10} {}", name, remap::entry_desc(e));
+                }
+                return Ok(());
+            }
+            let mut patched = 0;
+            for a in &assignments {
+                let (key, target) = a
+                    .split_once('=')
+                    .with_context(|| format!("bad assignment '{a}', expected KEY=TARGET"))?;
+                let idx = remap::matrix_index(key)
+                    .with_context(|| format!("unknown key '{key}' (run `keys` to list names)"))?;
+                let entry = remap::parse_target(target).map_err(anyhow::Error::msg)?;
+                block[idx as usize * 4..idx as usize * 4 + 4].copy_from_slice(&entry);
+                println!("{} (#{idx}) -> {}", key, remap::entry_desc(&entry));
+                patched += 1;
+            }
+            kb.write_keymap(&api, layer, &block)?;
+            let reread = kb.read_keymap(layer)?;
+            if reread == block {
+                println!("layer {layer} updated and read-back OK ({patched} keys)");
+            } else {
+                println!("warning: read-back differs from what was written");
+            }
+        }
+        Command::Macro { cmd } => macro_cmd(&api, cmd)?,
+        Command::Live { anim, seconds } => {
+            let anim = live::Anim::parse(&anim).map_err(anyhow::Error::msg)?;
+            let kb = Keyboard::open(&api)?;
+            println!("streaming '{}' for {seconds}s (custom effect, ~14 fps)…", anim.name());
+            let frames = live::play(&kb, &api, &anim, seconds)?;
+            println!("done: {frames} frames sent (board reverts to its effect in ~2s)");
+        }
+    }
+    Ok(())
+}
+
+fn macro_cmd(api: &HidApi, cmd: MacroCmd) -> Result<()> {
+    let kb = Keyboard::open(api)?;
+    match cmd {
+        MacroCmd::List => {
+            let block = kb.read_macros()?;
+            let store = macros::Store::parse(&block);
+            if store.macros.is_empty() {
+                println!("no macros stored");
+                return Ok(());
+            }
+            for (i, m) in store.macros.iter().enumerate() {
+                println!("macro {i}: {:?} ({} events)", m.name, m.events.len());
+                let events: Vec<String> = m.events.iter().map(|e| e.desc()).collect();
+                println!("  {}", events.join(" "));
+            }
+        }
+        MacroCmd::Set { index, name, sequence } => {
+            if !name.is_ascii() || name.len() > 32 {
+                bail!("macro name must be ASCII and at most 32 bytes");
+            }
+            let seq = sequence.join(" ");
+            let events = macros::parse_sequence(&seq).map_err(anyhow::Error::msg)?;
+            if events.is_empty() {
+                bail!("empty macro");
+            }
+            let kb_bytes = 1 + name.len() + events.len() * 4;
+            if kb_bytes > 250 {
+                bail!("macro too large ({kb_bytes} bytes; keep under ~250)");
+            }
+            let block = kb.read_macros()?;
+            let mut store = macros::Store::parse(&block);
+            store.set(index, macros::Macro { name: name.clone(), events });
+            let out = store.build();
+            kb.write_macros(api, &out)?;
+            let reread = macros::Store::parse(&kb.read_macros()?);
+            let saved = reread.macros.get(index);
+            match saved {
+                Some(m) if m.name == name => {
+                    println!("macro {index} '{name}' saved ({} events, read-back OK)", m.events.len());
+                }
+                _ => println!("warning: read-back mismatch: {saved:?}"),
+            }
+        }
+        MacroCmd::Assign { key, index, mode, count, layer } => {
+            if ![1, 2, 4].contains(&mode) {
+                bail!("mode must be 1 (run N times), 2 (while held) or 4 (until any key)");
+            }
+            let idx = remap::matrix_index(&key)
+                .with_context(|| format!("unknown key '{key}'"))?;
+            let block = kb.read_macros()?;
+            let store = macros::Store::parse(&block);
+            if index >= store.macros.len() || store.macros[index].events.is_empty() {
+                bail!("macro {index} does not exist (see `macro list`)");
+            }
+            let mut keymap_block = kb.read_keymap(layer)?;
+            let entry = [0x03, mode, count, index as u8];
+            keymap_block[idx as usize * 4..idx as usize * 4 + 4].copy_from_slice(&entry);
+            kb.write_keymap(api, layer, &keymap_block)?;
+            println!("{key} (#{idx}) -> {}", remap::entry_desc(&entry));
+        }
+        MacroCmd::Del { index } => {
+            let block = kb.read_macros()?;
+            let mut store = macros::Store::parse(&block);
+            if index >= store.macros.len() {
+                bail!("macro {index} does not exist");
+            }
+            let name = store.macros[index].name.clone();
+            store.delete(index);
+            kb.write_macros(api, &store.build())?;
+            println!("macro {index} ('{name}') deleted");
         }
     }
     Ok(())
