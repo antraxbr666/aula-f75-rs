@@ -9,7 +9,8 @@ firmware behavior that is **not** discoverable from the community doc alone.
 
 - Repo: https://github.com/antraxbr666/aula-f75-rs.git (branch `main`)
 - Stack: Rust, `hidapi` (HID IO), `egui`/`eframe` 0.29 (GUI), `clap` (CLI)
-- Platforms: **Windows + Linux only** (no macOS)
+- Platform: **Linux x86_64 only** (Windows support dropped; developed and
+  tested on shadowBox — Arch, niri + Wayland)
 - All HID communication is hardcoded via `hidapi` — no vendor driver required.
 
 ---
@@ -24,13 +25,13 @@ cargo run -- info           # CLI: current effect/brightness/battery/settings
 cargo run -- remap 0        # CLI: dump base keymap (decoded)
 ```
 
-### Windows quirks (the project was bootstrapped on Windows)
+> History: the project was bootstrapped on Windows; Windows support has
+> been dropped and development now happens on **shadowBox** (Arch Linux,
+> niri + Wayland). The GUI (eframe/winit) runs with the native Wayland
+> backend. Shell note: `#` starts a comment in fish/bash too — quote it in
+> arguments: `cargo run -- live '#ff0000'`.
 
-- The running GUI locks `target\debug\aula-f75.exe`; kill it before rebuilding:
-  `Stop-Process -Name aula-f75 -ErrorAction SilentlyContinue`
-- In PowerShell, `#` in arguments must be quoted: `cargo run -- live '#ff0000'`.
-
-### Linux requirements (new territory — verify on first session)
+### Linux requirements
 
 - `hidapi` uses the **hidraw** backend. Without root you need a udev rule:
   ```
@@ -38,8 +39,9 @@ cargo run -- remap 0        # CLI: dump base keymap (decoded)
   KERNEL=="hidraw*", ATTRS{idVendor}=="3554", MODE="0660", TAG+="uaccess"
   ```
   then `sudo udevadm control --reload-rules && sudo udevadm trigger` and
-  re-plug the dongle. libudev-dev is required at build time
-  (`apt install libudev-dev libudev1` or distro equivalent).
+  re-plug the dongle. libudev headers are required at build time — on Arch
+  they ship with `systemd` (already present on any normal install); on
+  Debian/Ubuntu: `apt install libudev-dev libudev1`.
 - The 2.4G dongle exposes **multiple hidraw nodes** (one per HID collection).
   `Keyboard::open` already selects the right one (see §3) — on Linux also
   verify `usage_page()` filtering works identically (hidraw exposes it via
@@ -480,9 +482,8 @@ The default egui font lacks many glyphs. NEVER use in any UI string:
 7. The 2.4G dongle occasionally flakes on a full read even when idle —
    worker-side retries and the GUI's optimistic keymap update exist for
    this reason.
-8. PowerShell `#` needs quoting; backticks in PowerShell strings are escape
-   chars (a `` `remap `` in a double-quoted string became CR — use
-   single-quoted strings for generated code).
+8. `#` starts a comment in fish and bash too — always quote it in args:
+   `cargo run -- live '#ff0000'`.
 9. Baseline capture must happen ONLY at verified factory state (§6.6).
 
 ---
@@ -529,22 +530,24 @@ aula-f75 remap 0 --raw            # byte-compare vs factory::BASE if unsure
 - **Wired transport (258A:010C)** — usage page 0xFF00, 520-byte feature
   reports. Same blocks, different pipe. Needs a second transport impl +
   real hardware validation. This is the main protocol gap.
-- **Linux bring-up verification** — udev rule (§1), confirm usage-page
-  selection and `wait_keys_idle` behave identically on hidraw, test
-  Bluetooth pairing path.
+- **Linux hardware bring-up on shadowBox** — udev rule (§1) in daily use,
+  confirm usage-page selection and `wait_keys_idle` behave identically on
+  hidraw, test Bluetooth pairing path, GUI on niri/Wayland.
 - **GUI macro listing** — the Macros tab can save/delete but does not LIST
   what's stored (CLI `macro list` does). Obvious UX gap, easy win.
-- **GitHub Actions builds** (Windows + Linux) — deliberately deferred by the
+- **GitHub Actions builds** (Linux x86_64) — deliberately deferred by the
   owner; ask before adding.
 - Deliberately NOT wanted (owner's decision, do not resurrect): tray icon,
   language switcher, startup entry, per-key GUI painting section, GUI Live
-  section, macOS support.
+  section, macOS support, Windows support (dropped — Linux x86_64 only).
 - PALETTE block (0x09, 490 B) is known but unused; only touch it with
   hardware in hand to validate.
 
 ## 14. Git conventions
 
-- Identity for commits (no global git config on the dev machine):
-  `git -c user.name="fredc" -c user.email="fredc@local" commit -m "..."`
+- Dev machine is **shadowBox**, which has a global git identity
+  (`AntraXClown <fredcox@gmail.com>`) — plain `git commit` uses it, no `-c`
+  overrides needed. (History predating the Linux migration was committed as
+  `fredc <fredc@local>` on Windows.)
 - Push to `origin/main`. Commit messages in English, imperative, one topic
   per commit.

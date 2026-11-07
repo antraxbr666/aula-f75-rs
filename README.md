@@ -1,6 +1,6 @@
 # ⌨️ aula-f75-rs
 
-🦀 Ferramenta **multiplataforma** (**Windows + Linux**) em *Rust* para configurar o teclado mecânico **AULA F75** — um substituto completo e independente do software oficial `OemDrv.exe` (exclusivo do Windows).
+🦀 Ferramenta para **Linux x86_64** em *Rust* para configurar o teclado mecânico **AULA F75** — um substituto completo e independente do software oficial `OemDrv.exe` (exclusivo do Windows). Desenvolvida e testada em **Arch Linux** (niri + Wayland).
 
 > 🎯 **Binário único. Sem driver. Sem instalador. Sem dependências externas.**
 > Toda a comunicação é feita por HID padrão (`hidapi`) — remaps, macros e iluminação são gravados **dentro do teclado** e valem em qualquer computador depois.
@@ -41,7 +41,7 @@ O teclado escuta num **canal HID vendor**: report `0x13`, pacotes de **20 bytes*
 
 ## 🛠️ Compilar
 
-**Pré-requisitos:** Rust estável + (no Linux) `libudev-dev`.
+**Pré-requisitos:** Rust estável + headers do libudev (Arch: já vêm com o `systemd`; Debian/Ubuntu: `libudev-dev`).
 
 ```bash
 git clone https://github.com/antraxbr666/aula-f75-rs.git
@@ -179,7 +179,7 @@ aula-f75 keys                # ⌨️ nomes de teclas + índice LED + x/y
 - [ ] 🔗 Transporte cabo `258a:010c` (usage page `0xFF00`, feature report 520 B)
 - [ ] 🐧 Validação final no Linux (udev/hidraw, Bluetooth)
 - [ ] ⏺️ Listar macros gravadas na GUI (hoje só via CLI)
-- [ ] 🤖 Builds no GitHub Actions (Windows + Linux)
+- [ ] 🤖 Builds no GitHub Actions (Linux x86_64)
 
 ---
 
