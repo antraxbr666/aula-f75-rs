@@ -12,6 +12,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
 const MSG_FOCUS: &str = "focus";
+const MSG_TOGGLE: &str = "toggle";
 
 /// `$XDG_RUNTIME_DIR/aula-f75-<user>.sock` (falls back to the temp dir).
 fn socket_path() -> PathBuf {
@@ -45,23 +46,28 @@ pub fn bind() -> std::io::Result<UnixListener> {
     }
 }
 
-/// Ask a running GUI to show itself. `false` when no GUI is alive.
-pub fn request_focus() -> bool {
+/// Send a control message to the live GUI. `false` when nobody is listening
+/// (no window open).
+pub fn request(msg: &str) -> bool {
     let Ok(mut sock) = UnixStream::connect(socket_path()) else {
         return false;
     };
-    sock.write_all(format!("{MSG_FOCUS}\n").as_bytes()).is_ok()
+    sock.write_all(format!("{msg}\n").as_bytes()).is_ok()
 }
 
 /// Serve control messages on `listener` in a background thread.
-pub fn watch(listener: UnixListener, on_focus: impl Fn() + Send + 'static) {
+pub fn watch(listener: UnixListener, on_msg: impl Fn(&str) + Send + 'static) {
     std::thread::spawn(move || {
         for conn in listener.incoming() {
             let Ok(conn) = conn else { continue };
             let mut line = String::new();
-            if BufReader::new(conn).read_line(&mut line).is_ok() && line.trim() == MSG_FOCUS {
-                on_focus();
+            if BufReader::new(conn).read_line(&mut line).is_ok() {
+                on_msg(line.trim());
             }
         }
     });
 }
+
+/// Message names understood by `watch` (exported for the callers' `match`).
+pub const FOCUS: &str = MSG_FOCUS;
+pub const TOGGLE: &str = MSG_TOGGLE;

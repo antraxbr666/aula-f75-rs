@@ -486,10 +486,14 @@ src/
   `winit::platform::wayland::WindowAttributesExtWayland::with_name`). Without
   it the compositor reports the app id as unset. niri window rules target
   `app-id="aula-f75-rs"`.
-- **Tray click**: `AulaTray::activate` (left click on the icon) is the same as
-  the menu **Show** — ksni's `MENU_ON_ACTIVATE` stays at its `false` default,
-  so the host sends `Activate` instead of popping the menu. Middle click
-  (`secondary_activate`) is intentionally unused.
+- **Tray click**: `AulaTray::activate` (left click on the icon) sends `toggle`
+  over the control socket (`src/ipc.rs`): with a window up the GUI closes
+  itself (`ViewportCommand::Close` on the root viewport), with none the daemon
+  spawns one. The menu **Show** item always means focus-or-open — it never
+  closes. ksni's `MENU_ON_ACTIVATE` stays at its `false` default, so the host
+  sends `Activate` instead of popping the menu; `secondary_activate` (middle
+  click) is unused. Do not make `toggle` depend on focus state: the simple
+  "alive = close" rule is the owner's choice.
 - Icon bytes are a
   pre-rendered 64x64 RGBA (`assets/icon-64.rgba`, straight alpha for egui,
   rotated to ARGB32 for ksni) — regenerate with `resvg --width 64 --height

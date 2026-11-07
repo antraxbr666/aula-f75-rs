@@ -43,10 +43,19 @@ impl Daemon {
         }
     }
 
-    /// Tray "Show": focus the live window, or launch a new one.
+    /// Focus the live window, or launch a new one (tray menu "Show", startup).
     pub fn show(&mut self) {
         self.reap();
-        if ipc::request_focus() {
+        if ipc::request(ipc::FOCUS) {
+            return;
+        }
+        self.spawn_gui();
+    }
+
+    /// Tray left click: the GUI decides — visible window closes, none opens.
+    pub fn toggle(&mut self) {
+        self.reap();
+        if ipc::request(ipc::TOGGLE) {
             return;
         }
         self.spawn_gui();

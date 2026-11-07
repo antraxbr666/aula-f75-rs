@@ -456,9 +456,14 @@ impl GuiApp {
     /// it to focus an already-open window instead of launching a second one.
     fn new(cc: &eframe::CreationContext, listener: std::os::unix::net::UnixListener) -> Self {
         let ctx = cc.egui_ctx.clone();
-        ipc::watch(listener, move || {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        ipc::watch(listener, move |msg| {
+            if msg == ipc::TOGGLE {
+                // The window is up and somebody clicked the icon: close it.
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
             ctx.request_repaint();
         });
         GuiApp::default()
@@ -1054,7 +1059,7 @@ pub fn run() -> anyhow::Result<()> {
     let listener = match ipc::bind() {
         Ok(listener) => listener,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-            ipc::request_focus();
+            ipc::request(ipc::FOCUS);
             return Ok(());
         }
         Err(e) => return Err(anyhow::anyhow!("control socket: {e}")),
