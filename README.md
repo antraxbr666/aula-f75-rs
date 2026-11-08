@@ -5,7 +5,7 @@
 > 🎯 **Binário único. Sem driver. Sem instalador. Sem dependências externas.**
 > Toda a comunicação é feita por HID padrão (`hidapi`) — remaps, macros e iluminação são gravados **dentro do teclado** e valem em qualquer computador depois.
 
-📦 **Repo:** `https://github.com/antraxbr666/aula-f75-rs.git` · 🧠 **Documentação técnica completa:** [`AGENTS.md`](AGENTS.md)
+📦 **Repo:** `https://github.com/fredjunior54/aula-f75-rs.git` · 🧠 **Documentação técnica completa:** [`AGENTS.md`](AGENTS.md)
 
 > 🔤 Tipografia embutida: **CaskaydiaCove Nerd Font Mono** (`assets/CaskaydiaCoveNerdFontMono-Regular.ttf`), compilada via `include_bytes!` — nenhuma fonte precisa estar instalada no sistema. Licenças em `assets/LICENSE-NerdFonts.txt` (Nerd Fonts / Cascadia Code, SIL OFL 1.1).
 
@@ -48,7 +48,7 @@ O teclado escuta num **canal HID vendor**: report `0x13`, pacotes de **20 bytes*
 **Pré-requisitos:** Rust estável + headers do libudev (Arch: já vêm com o `systemd`; Debian/Ubuntu: `libudev-dev`).
 
 ```bash
-git clone https://github.com/antraxbr666/aula-f75-rs.git
+git clone https://github.com/fredjunior54/aula-f75-rs.git
 cd aula-f75-rs
 cargo build --release        # → target/release/aula-f75
 ```

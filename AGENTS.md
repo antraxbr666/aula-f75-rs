@@ -7,7 +7,7 @@ unless explicitly marked otherwise. Read this file fully before touching
 `src/` — it encodes weeks of hard-won protocol knowledge and non-obvious
 firmware behavior that is **not** discoverable from the community doc alone.
 
-- Repo: https://github.com/antraxbr666/aula-f75-rs.git (branch `main`)
+- Repo: https://github.com/fredjunior54/aula-f75-rs.git (branch `main`)
 - Stack: Rust, `hidapi` (HID IO), `egui`/`eframe` 0.29 (GUI), `ksni` (SNI tray),
   `clap` (CLI)
 - Platform: **Linux x86_64 only** (Windows support dropped; developed and
