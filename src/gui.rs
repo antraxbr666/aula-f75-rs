@@ -572,6 +572,16 @@ fn section_title(ui: &mut egui::Ui, section: Section, name: &str) {
     );
 }
 
+/// Shared compact container for the Remap and Macros lists.
+fn list_panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Frame::group(ui.style())
+        .fill(MOCHA.surface0)
+        .stroke(Stroke::new(1.0_f32, MOCHA.surface1))
+        .inner_margin(egui::Margin::symmetric(8.0, 8.0))
+        .show(ui, add)
+        .inner
+}
+
 pub struct GuiApp {
     tx: mpsc::Sender<Job>,
     rx: mpsc::Receiver<Reply>,
@@ -949,43 +959,60 @@ impl GuiApp {
         ui.add_space(6.0);
         ui.small(format!("selected: {}", selected_names(&self.selected)));
 
-        // active remaps: entries that differ from the factory baseline
+        // Active remaps: entries that differ from the factory baseline.
         ui.add_space(10.0);
-        ui.separator();
         let remaps = self.active_remaps();
-        ui.strong(format!("Active remaps ({})", remaps.len()));
         if self.keymaps.is_none() {
+            ui.strong("Active remaps");
             ui.small("keymaps not read yet…");
         } else if remaps.is_empty() {
-            ui.small("none — keyboard is at factory state");
+            list_panel(ui, |ui| {
+                ui.strong("Active remaps (0)");
+                ui.add_space(4.0);
+                ui.small("none — keyboard is at factory state");
+            });
         } else {
             let mut revert = Vec::new();
-            egui::Grid::new("active_remaps")
-                .num_columns(4)
-                .spacing([12.0, 4.0])
-                .show(ui, |ui| {
-                    for (layer, idx) in &remaps {
-                        let Some(km) = &self.keymaps else { break };
-                        let o = *idx as usize * 4;
-                        let e = &km[*layer as usize][o..o + 4];
-                        ui.small(if *layer == 0 { "base" } else { "Fn" });
-                        ui.small(remap::matrix_name(*idx).unwrap_or("?"));
-                        ui.small(remap::entry_desc(e));
-                        if ui
-                            .add_enabled(
-                                !self.pending,
-                                egui::Button::new(
-                                    egui::RichText::new("\u{F0E2}").color(MOCHA.yellow),
-                                ),
-                            )
-                            .on_hover_text("revert this key to factory")
-                            .clicked()
-                        {
-                            revert.push((*layer, *idx));
-                        }
-                        ui.end_row();
+            list_panel(ui, |ui| {
+                ui.strong(format!("Active remaps ({})", remaps.len()));
+                ui.separator();
+                for (row, (layer, idx)) in remaps.iter().enumerate() {
+                    let Some(km) = &self.keymaps else { break };
+                    let o = *idx as usize * 4;
+                    let entry = &km[*layer as usize][o..o + 4];
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            [38.0, 22.0],
+                            egui::Label::new(if *layer == 0 { "base" } else { "Fn" }),
+                        );
+                        ui.add_sized(
+                            [34.0, 22.0],
+                            egui::Label::new(remap::matrix_name(*idx).unwrap_or("?")),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add_enabled(
+                                    !self.pending,
+                                    egui::Button::new(
+                                        egui::RichText::new("\u{F0E2}").color(MOCHA.yellow),
+                                    ),
+                                )
+                                .on_hover_text("revert this key to factory")
+                                .clicked()
+                            {
+                                revert.push((*layer, *idx));
+                            }
+                        });
+                    });
+                    ui.add_sized(
+                        [ui.available_width(), 20.0],
+                        egui::Label::new(remap::entry_desc(entry)).truncate(),
+                    );
+                    if row + 1 < remaps.len() {
+                        ui.separator();
                     }
-                });
+                }
+            });
             for (layer, idx) in revert {
                 self.pending = true;
                 self.status = "reverting to factory…".into();
@@ -1080,26 +1107,28 @@ impl GuiApp {
         }
 
         ui.add_space(12.0);
-        ui.separator();
         let stored = self.macros.clone().unwrap_or_default();
-        ui.strong(format!("Stored macros ({})", stored.len()));
         if stored.is_empty() {
-            ui.small(if self.macros.is_some() {
-                "none — create a macro above"
-            } else {
-                "macros not read yet…"
+            list_panel(ui, |ui| {
+                ui.strong("Stored macros (0)");
+                ui.add_space(4.0);
+                ui.small(if self.macros.is_some() {
+                    "none — create a macro above"
+                } else {
+                    "macros not read yet…"
+                });
             });
             return;
         }
 
         let mut edit_slot = None;
         let mut delete_slot = None;
-        egui::Grid::new("stored_macros")
-            .num_columns(4)
-            .spacing([12.0, 6.0])
-            .show(ui, |ui| {
-                for (slot, macro_) in stored.iter().enumerate() {
-                    ui.small(format!("#{slot}"));
+        list_panel(ui, |ui| {
+            ui.strong(format!("Stored macros ({})", stored.len()));
+            ui.separator();
+            for (slot, macro_) in stored.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.add_sized([30.0, 22.0], egui::Label::new(format!("#{slot}")));
                     if ui
                         .selectable_label(
                             self.macro_editing == Some(slot),
@@ -1115,24 +1144,7 @@ impl GuiApp {
                         edit_slot = Some(slot);
                     }
                     ui.small(format!("{} ev", macro_.events.len()));
-                    let triggers = self.macro_triggers(slot as u8);
-                    ui.horizontal(|ui| {
-                        let labels: Vec<String> = triggers
-                            .iter()
-                            .map(|(layer, key)| {
-                                format!(
-                                    "{} ({})",
-                                    remap::matrix_name(*key).unwrap_or("?"),
-                                    if *layer == 0 { "base" } else { "Fn" }
-                                )
-                            })
-                            .collect();
-                        let binding_labels = if labels.is_empty() {
-                            "—".to_owned()
-                        } else {
-                            labels.join(", ")
-                        };
-                        ui.small(binding_labels);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add_enabled(
                                 !self.pending,
@@ -1144,9 +1156,28 @@ impl GuiApp {
                             delete_slot = Some(slot);
                         }
                     });
-                    ui.end_row();
+                });
+                let triggers = self.macro_triggers(slot as u8);
+                let labels: Vec<String> = triggers
+                    .iter()
+                    .map(|(layer, key)| {
+                        format!(
+                            "{} ({})",
+                            remap::matrix_name(*key).unwrap_or("?"),
+                            if *layer == 0 { "base" } else { "Fn" }
+                        )
+                    })
+                    .collect();
+                ui.small(if labels.is_empty() {
+                    "no assigned keys".to_owned()
+                } else {
+                    labels.join(", ")
+                });
+                if slot + 1 < stored.len() {
+                    ui.separator();
                 }
-            });
+            }
+        });
         if let Some(slot) = edit_slot {
             let macro_ = &stored[slot];
             self.macro_editing = Some(slot);
