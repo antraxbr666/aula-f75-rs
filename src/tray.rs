@@ -61,6 +61,14 @@ fn tray_icon_small() -> ksni::Icon {
 static TRAY_ICON_LARGE: LazyLock<ksni::Icon> = LazyLock::new(tray_icon_large);
 static TRAY_ICON_SMALL: LazyLock<ksni::Icon> = LazyLock::new(tray_icon_small);
 
+fn window_action_label(window_open: bool) -> &'static str {
+    if window_open {
+        "Hide"
+    } else {
+        "Show"
+    }
+}
+
 pub struct AulaTray {
     /// Shared with the reaper thread in `daemon::run`.
     state: Arc<Mutex<Daemon>>,
@@ -98,21 +106,17 @@ impl ksni::Tray for AulaTray {
         }
     }
 
+    /// Rebuild the cached SNI menu every time the host is about to display
+    /// it, so the Show/Hide label reflects the current GUI child state.
+    fn menu_about_to_show(&mut self) {}
+
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::StandardItem;
         let label = self
             .state
             .lock()
-            .map(
-                |mut daemon| {
-                    if daemon.window_open() {
-                        "Hide"
-                    } else {
-                        "Show"
-                    }
-                },
-            )
-            .unwrap_or("Show");
+            .map(|mut daemon| window_action_label(daemon.window_open()))
+            .unwrap_or_else(|_| window_action_label(false));
         vec![
             StandardItem {
                 label: label.into(),
@@ -155,5 +159,16 @@ pub fn spawn(state: Arc<Mutex<Daemon>>) -> Option<TrayHandle> {
             eprintln!("warning: tray unavailable ({e})");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::window_action_label;
+
+    #[test]
+    fn window_action_label_tracks_gui_state() {
+        assert_eq!(window_action_label(false), "Show");
+        assert_eq!(window_action_label(true), "Hide");
     }
 }
