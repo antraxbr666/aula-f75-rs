@@ -106,18 +106,6 @@ pub fn run(open_window: bool) -> anyhow::Result<()> {
         });
     }
 
-    // The window is closed by the compositor, not by us: poll for its exit.
-    {
-        let state = state.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_millis(500));
-            match state.lock() {
-                Ok(mut daemon) => daemon.reap(),
-                Err(_) => return,
-            }
-        });
-    }
-
     let handle = tray::spawn(state.clone())
         .ok_or_else(|| anyhow::anyhow!("tray unavailable (no SNI host on the D-Bus session)"))?;
 
@@ -129,8 +117,65 @@ pub fn run(open_window: bool) -> anyhow::Result<()> {
 
     // ksni 0.3.7 has no blocking `wait()`; stay alive until the tray service
     // itself goes away (SNI host vanished) — "Quit" exits the process.
+    let mut published = PublishedWindowState::default();
     while !handle.is_closed() {
-        std::thread::sleep(Duration::from_secs(1));
+        let window_open = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("daemon state poisoned"))?
+            .window_open();
+        // menu() also locks the daemon. Release its mutex before updating
+        // ksni, and notify only after the child has actually changed state.
+        if published.changed(window_open) {
+            let _ = handle.update(|_| {});
+        }
+        std::thread::sleep(Duration::from_millis(500));
     }
     Ok(())
+}
+
+/// Tracks transitions, including the initial menu publication.
+#[derive(Default)]
+struct PublishedWindowState(Option<bool>);
+
+impl PublishedWindowState {
+    fn changed(&mut self, current: bool) -> bool {
+        let changed = self.0 != Some(current);
+        self.0 = Some(current);
+        changed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publishes_initial_state_and_each_transition_only() {
+        let mut published = PublishedWindowState::default();
+        for (current, expected) in [
+            (false, true),
+            (false, false),
+            (true, true),
+            (true, false),
+            (false, true),
+            (false, false),
+            (true, true),
+        ] {
+            assert_eq!(published.changed(current), expected);
+        }
+    }
+
+    #[test]
+    fn reaps_exited_child_before_publishing_closed_state() {
+        let child = Command::new("sh").args(["-c", "exit 0"]).spawn().unwrap();
+        let mut daemon = Daemon { child: Some(child) };
+        let mut published = PublishedWindowState::default();
+        assert!(published.changed(true));
+        // wait() guarantees that the subprocess exited without timing sleeps.
+        daemon.child.as_mut().unwrap().wait().unwrap();
+        assert!(!daemon.window_open());
+        assert!(published.changed(daemon.window_open()));
+        assert!(daemon.child.is_none());
+        assert!(!published.changed(daemon.window_open()));
+    }
 }

@@ -798,3 +798,14 @@ Nothing to do in the GUI or the CLI: both read `CARGO_PKG_VERSION`
    `git push origin vX.Y.Z`. The GitHub Actions release workflow validates the tag
    against `Cargo.toml` and publishes the Linux x86_64 release assets.
 7. Never `--force`, never `reset --hard`, never commit secrets.
+
+
+### Tray menu state notifications
+
+The daemon resident loop reaps the GUI child every 500 ms and calls
+`TrayHandle::update` on the initial state and every actual open/closed
+transition. A Close IPC message returns before the GUI exits: ksni's immediate
+post-click menu refresh can still see the old state. AboutToShow alone is not
+sufficient for hosts that cache the menu. Always release the daemon mutex
+before calling the tray update, because `menu()` acquires the same mutex.
+This loop observes a local process only, never HID.
