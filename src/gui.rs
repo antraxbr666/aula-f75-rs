@@ -1379,7 +1379,20 @@ impl eframe::App for GuiApp {
         }
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
+            let (rgba, size) = tray::logo_rgba();
+            let logo = self
+                .logo
+                .get_or_insert_with(|| {
+                    let color = egui::ColorImage::from_rgba_unmultiplied(
+                        [size as usize, size as usize],
+                        rgba,
+                    );
+                    ui.ctx()
+                        .load_texture("app-logo", color, egui::TextureOptions::LINEAR)
+                })
+                .clone();
             ui.horizontal(|ui| {
+                ui.add(egui::Image::from_texture(&logo).fit_to_exact_size(egui::vec2(32.0, 32.0)));
                 ui.heading(egui::RichText::new("aula-f75-rs").color(MOCHA.mauve));
                 ui.separator();
                 let (dot, dot_color) = if self.connected {
@@ -1394,26 +1407,18 @@ impl eframe::App for GuiApp {
                 );
                 if let Some(b) = self.battery {
                     ui.separator();
-                    let mut battery = egui::text::LayoutJob::default();
-                    battery.append(
-                        "\u{F241}",
-                        0.0,
-                        egui::TextFormat {
-                            font_id: egui::FontId::proportional(28.0),
-                            color: MOCHA.green,
-                            ..Default::default()
-                        },
-                    );
-                    battery.append(
-                        &format!("  {b}%"),
-                        0.0,
-                        egui::TextFormat {
-                            font_id: egui::FontId::proportional(20.0),
-                            color: MOCHA.green,
-                            ..Default::default()
-                        },
-                    );
-                    ui.label(battery);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("\u{F241}")
+                                .color(MOCHA.green)
+                                .size(28.0),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("{b}%"))
+                                .color(MOCHA.green)
+                                .size(20.0),
+                        );
+                    });
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if action_sized(
