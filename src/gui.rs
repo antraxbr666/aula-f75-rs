@@ -413,6 +413,8 @@ pub struct GuiApp {
     macro_mode: u8,
     // periodic refresh
     last_refresh: Instant,
+    /// In-app logo (built lazily from `tray::logo_rgba()` on first use).
+    logo: Option<egui::TextureHandle>,
 }
 
 impl Default for GuiApp {
@@ -445,6 +447,7 @@ impl Default for GuiApp {
             macro_seq: String::new(),
             macro_mode: 1,
             last_refresh: Instant::now(),
+            logo: None,
         };
         app.send(Job::Read);
         app
@@ -889,6 +892,21 @@ impl GuiApp {
         ui.small(self.device.clone());
         ui.add_space(4.0);
         ui.small("Firmware: not exposed over the 2.4G dongle");
+
+        // App logo, centered at the bottom of the section.
+        ui.add_space(16.0);
+        let (rgba, size) = tray::logo_rgba();
+        let logo = self.logo.get_or_insert_with(|| {
+            let color =
+                egui::ColorImage::from_rgba_unmultiplied([size as usize, size as usize], rgba);
+            ui.ctx()
+                .load_texture("app-logo", color, egui::TextureOptions::LINEAR)
+        });
+        ui.vertical_centered(|ui| {
+            ui.add(egui::Image::from_texture(&*logo).fit_to_exact_size(egui::vec2(128.0, 128.0)));
+            ui.add_space(4.0);
+            ui.small(format!("aula-f75-rs v{}", env!("CARGO_PKG_VERSION")));
+        });
     }
 }
 

@@ -22,6 +22,12 @@ static ICON_64: &[u8] = include_bytes!("../assets/icon-64.rgba");
 const ICON_SIZE_LARGE: i32 = 256;
 const ICON_SIZE_SMALL: i32 = 64;
 
+/// The app logo as straight-alpha RGBA, plus its square dimension.
+/// Used by the window icon and by the in-app logo on the Device tab.
+pub fn logo_rgba() -> (&'static [u8], u32) {
+    (ICON_256, ICON_SIZE_LARGE as u32)
+}
+
 /// The app logo for the window icon (egui also wants straight RGBA).
 pub fn window_icon() -> egui::IconData {
     egui::IconData {

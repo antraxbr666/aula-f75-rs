@@ -214,6 +214,11 @@ Painting keys / applying a theme auto-switches the keyboard to effect 32
 esc/WASD/arrows blue ("game mode" highlight) — that's real factory data,
 not a bug.
 
+**Brightness 0 hides everything:** with `brightness == 0` an effect, a theme or
+per-key paint is still written correctly and the read-back confirms it, but the
+board lights nothing — this reads as "the write did not apply" and cost a whole
+debugging session. Suspect the brightness value before doubting the transport.
+
 ---
 
 ## 6. Keymap / remap (0x01/0x41)
@@ -530,6 +535,13 @@ src/
   64 in most hosts. For an SVG source the renderer here is `rsvg-convert`
   (there is no `resvg`): render big first (`-w 1024 -h 1024`), then run the
   same trim/extent/border/downscale steps on the PNG.
+- In-app logo: `tray::logo_rgba()` exposes the 256 px straight-alpha bytes so
+  the GUI can reuse them without a PNG decoder — `ui_device` builds one
+  `egui::TextureHandle` lazily (`ColorImage::from_rgba_unmultiplied`,
+  `TextureOptions::LINEAR`) and draws it **centered at 128 px at the bottom of
+  the Device tab**, under the transport/battery info, with `aula-f75-rs
+  v{CARGO_PKG_VERSION}` below it. The README shows the same
+  `assets/icon-source.png` as the first thing on the page.
 
 ### 10.2 Fonts and text sizes (read before writing UI strings)
 
