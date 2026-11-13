@@ -590,7 +590,9 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
   (`x` of the next key on the same row minus `KEY_GAP`, clamped to 1u), which
   yields shift 2.25u, space 6.25u, backspace 1.75u, enter ~2.1u, tab 1.5u. The
   F row (`y <= 30`) is spaced cosmetically in groups of four, so there it stays
-  1u. `BOARD_SCALE = 1.35`, cap height `31`, canvas 670x290 x scale; a rounded
+  1u. `BOARD_SCALE = 1.35`, cap height `29`, `KEY_SPACING = 6` (base-layout px:
+  3 px on a 36 px cell read as glued caps) and `KEY_MIN_W = 30` for a drawn
+  1u; canvas 670x290 x scale; a rounded
   `MOCHA.mantle` case is painted behind the caps and the artwork is centred in
   the allocated rect.
 - A cap whose RGB is `(0,0,0)` is painted `MOCHA.surface0` (a keycap), **not

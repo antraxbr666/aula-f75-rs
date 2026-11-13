@@ -26,19 +26,23 @@ use crate::{ipc, macros, remap};
 /// The board drawing is baseline 670x290 with 36x27 key rects; scaling it up
 /// keeps the (now 13 px) key legends inside the rects instead of clipping them.
 const BOARD_SCALE: f32 = 1.35;
-/// 1u in the base layout (px) and the gap between neighbouring key rects.
-const KEY_UNIT: f32 = 36.0;
-const KEY_HEIGHT: f32 = 31.0;
-const KEY_GAP: f32 = 3.0;
+/// Distance kept between two neighbouring caps, in base-layout px. Physical
+/// keyboards leave ~4-5% of the pitch; 3 px on a 36 px cell read as glued
+/// caps, which is why this is 6.
+const KEY_SPACING: f32 = 6.0;
+/// Drawn width of a 1u cap, i.e. the nominal cell minus the spacing.
+const KEY_MIN_W: f32 = 30.0;
+const KEY_HEIGHT: f32 = 29.0;
 
 /// Width of a key in the base layout: the distance to the next key on the same
-/// row minus the gap. `keymap::KEYS` only stores x/y, but it comes straight
+/// row minus the spacing. `keymap::KEYS` only stores x/y, but it comes straight
 /// from the official `KB.ini`, so this recovers the real caps (shift 2.25u,
 /// space 6.25u, backspace 1.75u …) instead of drawing every key as 1u. The F
-/// row (y <= 30) is spaced cosmetically in groups of four — there it stays 1u.
+/// row (y <= 30) is spaced cosmetically in groups of four, so there it stays
+/// 1u and the group gaps come from the table.
 fn key_width(key: &keymap::Key) -> f32 {
     if key.y <= 30 {
-        return KEY_UNIT;
+        return KEY_MIN_W;
     }
     let next = KEYS
         .iter()
@@ -46,8 +50,8 @@ fn key_width(key: &keymap::Key) -> f32 {
         .map(|k| k.x)
         .min();
     match next {
-        Some(nx) => ((nx - key.x) as f32 - KEY_GAP).clamp(KEY_UNIT, 240.0),
-        None => KEY_UNIT,
+        Some(nx) => ((nx - key.x) as f32 - KEY_SPACING).clamp(KEY_MIN_W, 240.0),
+        None => KEY_MIN_W,
     }
 }
 
