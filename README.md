@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.20</b></p>
+<p align="center"><b>v0.1.21</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -98,6 +98,8 @@ aula-f75 --start-minimized
 // ~/.config/niri/config.kdl
 spawn-at-startup "aula-f75" "--start-minimized"
 ```
+
+> 📦 **Packaging:** [`packaging/aula-f75-rs.desktop`](packaging/aula-f75-rs.desktop) is the versioned desktop launcher for the future AUR package. It launches `aula-f75` (tray + window); `cargo build` does not install it system-wide.
 
 | Icon | Tab | What it does |
 |---|---|---|

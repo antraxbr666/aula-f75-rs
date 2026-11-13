@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AULA F75
+Comment=Configure the AULA F75 mechanical keyboard
+Exec=aula-f75
+Icon=aula-f75-rs
+Terminal=false
+Categories=Settings;Utility;
+Keywords=keyboard;AULA;F75;RGB;remap;macro;
+StartupWMClass=aula-f75-rs
