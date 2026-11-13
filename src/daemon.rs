@@ -29,6 +29,12 @@ impl Daemon {
         }
     }
 
+    /// Whether the daemon currently owns a live GUI child.
+    pub fn window_open(&mut self) -> bool {
+        self.reap();
+        self.child.is_some()
+    }
+
     fn spawn_gui(&mut self) {
         let exe = match std::env::current_exe() {
             Ok(p) => p,

@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.23</b></p>
+<p align="center"><b>v0.1.24</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -85,7 +85,7 @@ aula-f75
 
 Vertical icon navbar on the left; each tab opens in the right panel. The keyboard drawing in the centre shows the **custom layer** (editor) with the real colours read from the hardware.
 
-> 🖴 **Tray:** `aula-f75` is the normal desktop launch: it starts a resident StatusNotifierItem (quickshell, waybar etc.) and its window. Use `aula-f75 --start-minimized` for autostart with **only the icon**. The tray has a **Show** menu (opens or focuses the window) and **Quit** (ends everything). **Left click = toggle:** opens the window when closed, closes it when open. The daemon runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
+> 🖴 **Tray:** `aula-f75` is the normal desktop launch: it starts a resident StatusNotifierItem (quickshell, waybar etc.) and its window. Use `aula-f75 --start-minimized` for autostart with **only the icon**. The tray menu's first item is **Show** when the window is closed and **Hide** when it is open; it opens/focuses or closes only the GUI accordingly. **Quit** ends everything. **Left click = toggle:** opens the window when closed, closes it when open. The daemon runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
 >
 > 🔂 **Single tray instance:** running `aula-f75` again never creates another icon; it asks the resident daemon to open or focus its existing window.
 >
@@ -218,7 +218,7 @@ aula-f75 keys                # ⌨️ key names + LED index + x/y
 - [x] ⏺️ Macros (`0x03`, 512 B) with save, bind and delete
 - [x] 🎵 Real-time lighting (`0x88`, ~14 fps, anti-flicker)
 - [x] 🧠 `AGENTS.md` — complete protocol reference for development
-- [x] 🖴 Tray icon (SNI/ksni) with Show/Quit
+- [x] 🖴 Tray icon (SNI/ksni) with dynamic Show/Hide and Quit
 - [ ] 🔗 Cable transport `258a:010c` (usage page `0xFF00`, 520 B feature report)
 - [ ] 🐧 Final Linux validation (udev/hidraw, Bluetooth)
 - [ ] ⏺️ List stored macros in the GUI (CLI only today)

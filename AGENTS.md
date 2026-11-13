@@ -442,7 +442,7 @@ src/
   factory.rs   factory BASE/FN keymap constants (see §6.6!)
   gui.rs       egui app: worker thread + mpsc jobs, sections, board drawing
   fonts.rs     CaskaydiaCove Nerd Font embedded (primary family + text sizes)
-  tray.rs      ksni SNI tray: Show/Quit menu, embedded icon (daemon side)
+  tray.rs      ksni SNI tray: dynamic Show/Hide + Quit menu, embedded icon (daemon side)
   daemon.rs    default launcher: supervises the GUI child + reaper thread
   ipc.rs       unix control sockets (GUI focus/toggle + tray single-instance lock)
 ```
@@ -476,7 +476,7 @@ src/
   remap in the selected layer get an orange stroke; selection = white
   stroke; Ctrl-click adds to selection.
 - **Tray (ksni/SNI, `src/tray.rs` + `src/daemon.rs`)**: resident icon with
-  Show/Quit menu, hosted by the default **`aula-f75` daemon**, not by the GUI
+  dynamic Show/Hide and Quit menu, hosted by the default **`aula-f75` daemon**, not by the GUI
   process. This is the close-to-tray model Wayland allows: close-to-tray via
   `CancelClose` + `Visible(false)` was tried and DOES NOT work (`winit`'s
   `set_visible` is a no-op on Wayland; commit `8cd62c6`, reverted in
@@ -506,14 +506,16 @@ src/
   `winit::platform::wayland::WindowAttributesExtWayland::with_name`). Without
   it the compositor reports the app id as unset. niri window rules target
   `app-id="aula-f75-rs"`.
-- **Tray click**: `AulaTray::activate` (left click on the icon) sends `toggle`
-  over the control socket (`src/ipc.rs`): with a window up the GUI closes
-  itself (`ViewportCommand::Close` on the root viewport), with none the daemon
-  spawns one. The menu **Show** item always means focus-or-open — it never
-  closes. ksni's `MENU_ON_ACTIVATE` stays at its `false` default, so the host
-  sends `Activate` instead of popping the menu; `secondary_activate` (middle
-  click) is unused. Do not make `toggle` depend on focus state: the simple
-  "alive = close" rule is the owner's choice.
+- **Tray click/menu**: `AulaTray::activate` (left click on the icon) sends
+  `toggle` over the control socket (`src/ipc.rs`): with a window up the GUI
+  closes itself (`ViewportCommand::Close` on the root viewport), with none the
+  daemon spawns one. The first menu item uses the daemon child state: **Hide**
+  when a GUI exists and **Show** otherwise; its activation also calls `toggle`
+  to handle a state change between menu construction and click. ksni's
+  `MENU_ON_ACTIVATE` stays at its `false` default, so the host sends `Activate`
+  instead of popping the menu; `secondary_activate` (middle click) is unused.
+  Do not make `toggle` depend on focus state: the simple "alive = close" rule
+  is the owner's choice.
 - **Visuals**: the whole window uses **Catppuccin Mocha** via
   `catppuccin-egui` (`src/gui.rs`, `GuiApp::new`:
   `catppuccin_egui::set_theme(&cc.egui_ctx, catppuccin_egui::MOCHA)`). The
@@ -703,7 +705,7 @@ Tray workflow: `aula-f75` opens the **tray and window** by default. Autostart
 with the **icon only** via `aula-f75 --start-minimized` (e.g.
 `spawn-at-startup "aula-f75" "--start-minimized"` in
 `~/.config/niri/config.kdl`); then `Mod+C` (`close-window`) closes the window
-and leaves the icon; menu **Show** reopens it, **Quit** kills both.
+and leaves the icon; menu **Show** reopens it, **Hide** closes it again, **Quit** kills both.
 
 Safe test cycle for keymap work (always restore!):
 

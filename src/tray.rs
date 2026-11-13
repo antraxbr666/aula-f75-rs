@@ -1,4 +1,4 @@
-//! StatusNotifierItem tray (ksni) — resident icon with Show/Quit menu.
+//! StatusNotifierItem tray (ksni) — resident icon with Show/Hide/Quit menu.
 //!
 //! SNI over D-Bus is the protocol quickshell/waybar/KDE host; no GTK, no
 //! XEmbed. This tray lives in the `aula-f75 tray` daemon (`src/daemon.rs`),
@@ -100,12 +100,27 @@ impl ksni::Tray for AulaTray {
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::StandardItem;
+        let label = self
+            .state
+            .lock()
+            .map(
+                |mut daemon| {
+                    if daemon.window_open() {
+                        "Hide"
+                    } else {
+                        "Show"
+                    }
+                },
+            )
+            .unwrap_or("Show");
         vec![
             StandardItem {
-                label: "Show".into(),
+                label: label.into(),
+                // The window can change state after this menu was built, so
+                // toggle at activation time rather than trusting the label.
                 activate: Box::new(|t: &mut Self| {
                     if let Ok(mut daemon) = t.state.lock() {
-                        daemon.show();
+                        daemon.toggle();
                     }
                 }),
                 ..Default::default()
