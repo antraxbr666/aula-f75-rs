@@ -585,11 +585,25 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
 - Emojis render monochrome through egui's fallback font — and since the
   Caskaydia covers none of `1F300-1F6FF`, prefer a Nerd codepoint (see above),
   never an emoji, for UI icons.
-- Board key legends are `FontId::proportional(13.0)` (15.0 on hover),
-  hardcoded in the drawing, independent of the global styles. The board is
-  drawn at `BOARD_SCALE = 1.2` (canvas 804x348, key rects 43x32) so those
-  legends fit inside the rects — scaling the text without scaling the board
-  clips `shift`/`bksp`.
+- Board drawing (`gui.rs`): **key caps use their real width**, not one
+  rectangle for everything. `key_width()` derives it from the `KB.ini` layout
+  (`x` of the next key on the same row minus `KEY_GAP`, clamped to 1u), which
+  yields shift 2.25u, space 6.25u, backspace 1.75u, enter ~2.1u, tab 1.5u. The
+  F row (`y <= 30`) is spaced cosmetically in groups of four, so there it stays
+  1u. `BOARD_SCALE = 1.35`, cap height `31`, canvas 670x290 x scale; a rounded
+  `MOCHA.mantle` case is painted behind the caps and the artwork is centred in
+  the allocated rect.
+- A cap whose RGB is `(0,0,0)` is painted `MOCHA.surface0` (a keycap), **not
+  black** — black reads as a hole. Legit colours are drawn as stored; the
+  white selection stroke and the orange remap stroke are unchanged.
+- Board key legends are `13.0 * BOARD_SCALE / 1.2` px (≈14.6, +2 on hover),
+  hardcoded in the drawing and independent of the global styles. Scaling the
+  legend without scaling the board clips `shift`/`bksp`; 1u caps in the right
+  column use the short labels from `keymap::label` (`del`, `pu`, `pd`, `ins`) —
+  the full names never fit.
+- Header (`TopBottomPanel::top`): status/battery are `RichText` at 20 px with
+  the `F111`/`F241` glyphs, and the refresh button uses `action_sized()`
+  (glyph 22, text 18) — plain `action()` stays 18/17 for panel buttons.
 
 ---
 

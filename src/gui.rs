@@ -25,7 +25,31 @@ use crate::{ipc, macros, remap};
 
 /// The board drawing is baseline 670x290 with 36x27 key rects; scaling it up
 /// keeps the (now 13 px) key legends inside the rects instead of clipping them.
-const BOARD_SCALE: f32 = 1.2;
+const BOARD_SCALE: f32 = 1.35;
+/// 1u in the base layout (px) and the gap between neighbouring key rects.
+const KEY_UNIT: f32 = 36.0;
+const KEY_HEIGHT: f32 = 31.0;
+const KEY_GAP: f32 = 3.0;
+
+/// Width of a key in the base layout: the distance to the next key on the same
+/// row minus the gap. `keymap::KEYS` only stores x/y, but it comes straight
+/// from the official `KB.ini`, so this recovers the real caps (shift 2.25u,
+/// space 6.25u, backspace 1.75u …) instead of drawing every key as 1u. The F
+/// row (y <= 30) is spaced cosmetically in groups of four — there it stays 1u.
+fn key_width(key: &keymap::Key) -> f32 {
+    if key.y <= 30 {
+        return KEY_UNIT;
+    }
+    let next = KEYS
+        .iter()
+        .filter(|k| (k.y as i32 - key.y as i32).abs() <= 6 && k.x > key.x)
+        .map(|k| k.x)
+        .min();
+    match next {
+        Some(nx) => ((nx - key.x) as f32 - KEY_GAP).clamp(KEY_UNIT, 240.0),
+        None => KEY_UNIT,
+    }
+}
 
 /// ---- worker (device IO) ----
 
@@ -415,12 +439,26 @@ fn action(
     color: Color32,
     text: &str,
 ) -> egui::Response {
+    action_sized(ui, enabled, glyph, color, text, 18.0, 17.0)
+}
+
+/// Same as [`action`] with explicit glyph/text sizes — the header needs a
+/// bigger refresh glyph than the panel buttons.
+fn action_sized(
+    ui: &mut egui::Ui,
+    enabled: bool,
+    glyph: &str,
+    color: Color32,
+    text: &str,
+    glyph_px: f32,
+    text_px: f32,
+) -> egui::Response {
     let mut job = egui::text::LayoutJob::default();
     job.append(
         glyph,
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::proportional(18.0),
+            font_id: egui::FontId::proportional(glyph_px),
             color,
             ..Default::default()
         },
@@ -429,7 +467,7 @@ fn action(
         &format!("  {text}"),
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::proportional(17.0),
+            font_id: egui::FontId::proportional(text_px),
             color: ui.style().visuals.text_color(),
             ..Default::default()
         },
@@ -1028,13 +1066,31 @@ impl eframe::App for GuiApp {
                 } else {
                     ("\u{F111}", MOCHA.red)
                 };
-                ui.label(egui::RichText::new(format!("{dot}  {}", self.status)).color(dot_color));
+                ui.label(
+                    egui::RichText::new(format!("{dot}  {}", self.status))
+                        .color(dot_color)
+                        .size(20.0),
+                );
                 if let Some(b) = self.battery {
                     ui.separator();
-                    ui.label(egui::RichText::new(format!("\u{F241}  {b}%")).color(MOCHA.green));
+                    ui.label(
+                        egui::RichText::new(format!("\u{F241}  {b}%"))
+                            .color(MOCHA.green)
+                            .size(20.0),
+                    );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if action(ui, !self.pending, "\u{F021}", MOCHA.sapphire, "refresh").clicked() {
+                    if action_sized(
+                        ui,
+                        !self.pending,
+                        "\u{F021}",
+                        MOCHA.sapphire,
+                        "refresh",
+                        22.0,
+                        18.0,
+                    )
+                    .clicked()
+                    {
                         self.pending = true;
                         self.send(Job::Read);
                     }
@@ -1103,31 +1159,70 @@ impl eframe::App for GuiApp {
             // inside the keyboard and cannot be read back. Painting keys or
             // applying a theme below auto-switches the keyboard to custom,
             // so no banner/button is needed here.
-            let (resp, painter) = ui.allocate_painter(
-                Vec2::new(670.0 * BOARD_SCALE, 290.0 * BOARD_SCALE),
-                Sense::click(),
+            let board = Vec2::new(670.0 * BOARD_SCALE, 290.0 * BOARD_SCALE);
+            // Centre the board in the free area instead of pinning it to the
+            // top-left corner (it used to leave a dead strip underneath).
+            ui.add_space(((ui.available_height() - board.y) * 0.35).max(0.0));
+            let (resp, painter) = ui.allocate_painter(board, Sense::click());
+            let s = BOARD_SCALE;
+            // Keyboard case: one rounded slab behind every key, so the caps sit
+            // on a body instead of floating on the panel background.
+            let mut min_x = f32::MAX;
+            let mut min_y = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut max_y = f32::MIN;
+            for key in KEYS {
+                let w = key_width(key);
+                min_x = min_x.min(key.x as f32 * s);
+                min_y = min_y.min(key.y as f32 * s);
+                max_x = max_x.max((key.x as f32 + w) * s);
+                max_y = max_y.max((key.y as f32 + KEY_HEIGHT) * s);
+            }
+            let pad = 12.0 * s;
+            // Offset that centres the drawn artwork inside the allocated rect.
+            let offset = Vec2::new(
+                ((board.x - (max_x - min_x + 2.0 * pad)) * 0.5).max(0.0),
+                ((board.y - (max_y - min_y + 2.0 * pad)) * 0.5).max(0.0),
             );
-            let origin = resp.rect.min;
+            let origin = resp.rect.min + offset;
+            let case = Rect::from_min_max(
+                pos2(origin.x + min_x - pad, origin.y + min_y - pad),
+                pos2(origin.x + max_x + pad, origin.y + max_y + pad),
+            );
+            painter.rect_filled(case, 14.0 * s, MOCHA.mantle);
+            painter.rect_stroke(case, 14.0 * s, Stroke::new(1.0_f32, MOCHA.surface1));
+
             for key in KEYS {
                 let rect = Rect::from_min_size(
-                    pos2(
-                        origin.x + key.x as f32 * BOARD_SCALE,
-                        origin.y + key.y as f32 * BOARD_SCALE,
-                    ),
-                    Vec2::new(36.0 * BOARD_SCALE, 27.0 * BOARD_SCALE),
+                    pos2(origin.x + key.x as f32 * s, origin.y + key.y as f32 * s),
+                    Vec2::new(key_width(key) * s, KEY_HEIGHT * s),
                 );
                 let [r, g, b] = self.per_key[key.led as usize];
-                let fill = Color32::from_rgb(r, g, b);
+                // A cap with no colour at all is drawn as a keycap (surface0)
+                // instead of pure black: black reads as a hole in the board.
+                let fill = if r == 0 && g == 0 && b == 0 {
+                    MOCHA.surface0
+                } else {
+                    Color32::from_rgb(r, g, b)
+                };
                 let stroke = if self.selected.contains(&key.led) {
-                    Stroke::new(2.5_f32, Color32::WHITE)
+                    Stroke::new(2.5_f32 * s / 1.2, Color32::WHITE)
                 } else if self.is_remapped(key.led, self.remap_layer) {
                     // active remap in the layer being edited
-                    Stroke::new(1.6_f32, Color32::from_rgb(255, 140, 0))
+                    Stroke::new(1.6_f32 * s / 1.2, Color32::from_rgb(255, 140, 0))
                 } else {
-                    Stroke::new(1.0_f32, Color32::from_gray(70))
+                    Stroke::new(1.0_f32, MOCHA.overlay0)
                 };
-                painter.rect_filled(rect, 4.0, fill);
-                painter.rect_stroke(rect, 4.0, stroke);
+                painter.rect_filled(rect, 5.0 * s, fill);
+                painter.rect_stroke(rect, 5.0 * s, stroke);
+                // 1 px top highlight: enough volume to read as a cap, no more.
+                painter.line_segment(
+                    [
+                        pos2(rect.left() + 4.0 * s, rect.top() + 1.5),
+                        pos2(rect.right() - 4.0 * s, rect.top() + 1.5),
+                    ],
+                    Stroke::new(1.0_f32, Color32::from_white_alpha(26)),
+                );
                 // click handling (Ctrl-click = add to selection)
                 let id = Id::new(("key", key.led));
                 let r = ui.interact(rect, id, Sense::click());
@@ -1144,7 +1239,11 @@ impl eframe::App for GuiApp {
                 // always-on keycap legend: dark shadow + white text reads on
                 // any LED color
                 let label = keymap::label(key.name);
-                let font = egui::FontId::proportional(if r.hovered() { 15.0 } else { 13.0 });
+                let font = egui::FontId::proportional(if r.hovered() {
+                    13.0 * s / 1.2 + 2.0
+                } else {
+                    13.0 * s / 1.2
+                });
                 painter.text(
                     rect.center() + Vec2::new(0.7, 0.7),
                     egui::Align2::CENTER_CENTER,
@@ -1207,7 +1306,7 @@ pub fn run() -> anyhow::Result<()> {
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_app_id(APP_ID)
-                .with_inner_size([1280.0, 700.0])
+                .with_inner_size([1400.0, 780.0])
                 .with_icon(tray::window_icon()),
             ..Default::default()
         },

@@ -524,6 +524,12 @@ pub fn label(name: &str) -> &str {
         "lctrl" | "rctrl" => "ctrl",
         "lwin" => "win",
         "lalt" | "ralt" => "alt",
+        // 1u caps in the right-hand column: the full name does not fit the
+        // key rect at any usable font size.
+        "delete" => "del",
+        "pgup" => "pu",
+        "pgdn" => "pd",
+        "insert" => "ins",
         "up" => "up",
         "down" => "dn",
         "left" => "lt",
