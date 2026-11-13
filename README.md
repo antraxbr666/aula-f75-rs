@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.10</b></p>
+<p align="center"><b>v0.1.11</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -101,7 +101,7 @@ spawn-at-startup "aula-f75" "tray" "--no-window"
 |---|---|---|
 | 💡 | **Lighting** | effect (17 hardware values), brightness 0-9, speed 0-4, colour 0-7 |
 | ⌨ | **Remap** | select keys on the board → apply a target; **Active remaps** with per-key *undo* and *undo all* |
-| ⏺ | **Macros** | save/delete slots and bind them to keys with run modes |
+| ⏺ | **Macros** | save/delete slots, bind them to keys with run modes, and see the stored macros with the keys that fire them (per-key undo) |
 | 🌈 | **Themes** | list of themes with live previews; the stored one is highlighted (applying switches to custom) |
 | ⚙ | **Settings** | 💤 sleep (same values as the original app), ⏱ debounce, ♻ factory reset with confirmation |
 | ℹ | **About** | logo, name, version, repo link and author — plus transport, VID:PID, HID strings and the firmware note |

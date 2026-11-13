@@ -461,6 +461,14 @@ src/
   `Reply::KeymapsUpdated` and the GUI applies it **immediately** (optimistic
   update) so board markers/lists never go stale when the follow-up read
   fails on a flaky dongle. Don't regress this.
+- Macros tab lists the **stored** macros (name + event count) with the keys
+  that fire them (`macro_triggers` scans both layers for keymap entries of
+  type `0x03`), plus per-row *undo key* (`RestoreKey`, drops the binding) and
+  *delete* (removes the slot; later macros shift up). `Reply::Read` carries
+  `macros: Vec<(name, event_count)>`, read with every refresh.
+- `GuiApp::refresh()` is the only path that queues a `Job::Read`: it sets
+  `pending` **and** a truthful status (`reading…` / `connecting…`), because a
+  greyed-out button during a job used to look like a bug.
 - Sections (left icon navbar): Lighting, Remap, Macros, Themes, Settings,
   **About** (renamed from "Device" at the owner's request). Live and Per-key
   were REMOVED at the user's request — do not re-add them. Animation streaming remains CLI-only (`live` subcommand).

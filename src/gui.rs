@@ -77,6 +77,8 @@ enum Reply {
         battery: Option<u8>,
         device: String,
         keymaps: [Vec<u8>; 2],
+        /// (name, event count) per macro slot, in store order.
+        macros: Vec<(String, usize)>,
     },
     Done(String),
     /// A keymap layer was written; `block` is the final layer content so the
@@ -112,12 +114,13 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
         let reply = match job {
             Job::Read => match open_kb(&mut api) {
                 Ok(kb) => match read_all(&kb) {
-                    Ok((led_block, per_key, battery, device, keymaps)) => Reply::Read {
+                    Ok((led_block, per_key, battery, device, keymaps, macros)) => Reply::Read {
                         led: led_block,
                         per_key,
                         battery,
                         device,
                         keymaps,
+                        macros,
                     },
                     Err(e) => Reply::Error(format!("read failed: {e:#}")),
                 },
@@ -296,9 +299,16 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
     }
 }
 
-fn read_all(
-    kb: &Keyboard,
-) -> anyhow::Result<(Vec<u8>, Vec<[u8; 3]>, Option<u8>, String, [Vec<u8>; 2])> {
+type ReadState = (
+    Vec<u8>,
+    Vec<[u8; 3]>,
+    Option<u8>,
+    String,
+    [Vec<u8>; 2],
+    Vec<(String, usize)>,
+);
+
+fn read_all(kb: &Keyboard) -> anyhow::Result<ReadState> {
     let led_block = kb.read_led()?;
     let rgb = kb.read_block(cmd::PER_KEY_RGB, 0, PLANE * 3)?;
     let mut per_key = vec![[0u8; 3]; 90];
@@ -316,7 +326,12 @@ fn read_all(
         p.unwrap_or_default(),
     );
     let keymaps = [kb.read_keymap(0)?, kb.read_keymap(1)?];
-    Ok((led_block, per_key, battery, device, keymaps))
+    let macros = macros::Store::parse(&kb.read_macros()?)
+        .macros
+        .iter()
+        .map(|m| (m.name.clone(), m.events.len()))
+        .collect();
+    Ok((led_block, per_key, battery, device, keymaps, macros))
 }
 
 fn apply_rgb(
@@ -586,6 +601,8 @@ pub struct GuiApp {
     logo: Option<egui::TextureHandle>,
     /// Preview thumbnails of the built-in themes, one texture per preset.
     theme_previews: std::collections::HashMap<&'static str, egui::TextureHandle>,
+    /// Stored macros as (name, event count), read with every refresh.
+    macros: Option<Vec<(String, usize)>>,
 }
 
 impl Default for GuiApp {
@@ -620,6 +637,7 @@ impl Default for GuiApp {
             last_refresh: Instant::now(),
             logo: None,
             theme_previews: std::collections::HashMap::new(),
+            macros: None,
         };
         app.send(Job::Read);
         app
@@ -657,6 +675,18 @@ impl GuiApp {
         let _ = self.tx.send(job);
     }
 
+    /// Queue a full state read. The status says what the worker is doing, so a
+    /// button that is greyed out because of `pending` is not mistaken for a bug.
+    fn refresh(&mut self) {
+        self.pending = true;
+        self.status = if self.connected {
+            "reading…".into()
+        } else {
+            "connecting…".into()
+        };
+        self.send(Job::Read);
+    }
+
     /// True when the key's entry in `layer` differs from the factory
     /// baseline (i.e. it carries an active remap).
     fn is_remapped(&self, idx: u8, layer: u8) -> bool {
@@ -673,6 +703,24 @@ impl GuiApp {
     }
 
     /// All active remaps: (layer, key index) pairs differing from factory.
+    /// `(layer, key index)` pairs whose keymap entry triggers macro `idx`.
+    fn macro_triggers(&self, idx: u8) -> Vec<(u8, u8)> {
+        let Some(km) = &self.keymaps else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for layer in 0..2usize {
+            for key in 0..126usize {
+                let o = key * 4;
+                let e = &km[layer][o..o + 4];
+                if e[0] == 0x03 && e[3] == idx {
+                    out.push((layer as u8, key as u8));
+                }
+            }
+        }
+        out
+    }
+
     fn active_remaps(&self) -> Vec<(u8, u8)> {
         let mut out = Vec::new();
         for layer in 0u8..2 {
@@ -695,7 +743,9 @@ impl GuiApp {
                     battery,
                     device,
                     keymaps,
+                    macros,
                 } => {
+                    self.macros = Some(macros);
                     self.connected = true;
                     self.battery = battery;
                     self.device = device;
@@ -730,7 +780,7 @@ impl GuiApp {
                 }
                 Reply::Done(msg) => {
                     self.status = msg;
-                    self.send(Job::Read); // re-sync from hardware
+                    self.refresh(); // re-sync from hardware
                 }
                 Reply::KeymapsUpdated { msg, layer, block } => {
                     self.status = msg;
@@ -740,7 +790,7 @@ impl GuiApp {
                     if let Some(km) = &mut self.keymaps {
                         km[layer as usize] = block;
                     }
-                    self.send(Job::Read); // re-sync from hardware
+                    self.refresh(); // re-sync from hardware
                 }
                 Reply::Error(e) => {
                     self.connected = false;
@@ -1027,6 +1077,89 @@ impl GuiApp {
                 });
             }
         }
+        if self.pending {
+            ui.small("busy — wait for the current operation to finish");
+        }
+
+        // Stored macros: what is really in flash, and which keys fire them.
+        ui.add_space(12.0);
+        ui.separator();
+        let stored = self.macros.clone().unwrap_or_default();
+        ui.strong(format!("Stored macros ({})", stored.len()));
+        if stored.is_empty() {
+            ui.small(if self.macros.is_some() {
+                "none — save a macro above"
+            } else {
+                "macros not read yet…"
+            });
+            return;
+        }
+
+        let mut undo_binding: Option<(u8, u8)> = None;
+        let mut delete_slot: Option<usize> = None;
+        egui::Grid::new("stored_macros")
+            .num_columns(4)
+            .spacing([12.0, 6.0])
+            .show(ui, |ui| {
+                for (slot, (name, events)) in stored.iter().enumerate() {
+                    ui.small(format!("#{slot}"));
+                    ui.label(if name.is_empty() { "(unnamed)" } else { name });
+                    ui.small(format!("{events} ev"));
+                    let triggers = self.macro_triggers(slot as u8);
+                    ui.horizontal(|ui| {
+                        if triggers.is_empty() {
+                            ui.small("—");
+                        } else {
+                            let labels: Vec<String> = triggers
+                                .iter()
+                                .map(|(layer, key)| {
+                                    format!(
+                                        "{} ({})",
+                                        remap::matrix_name(*key).unwrap_or("?"),
+                                        if *layer == 0 { "base" } else { "Fn" }
+                                    )
+                                })
+                                .collect();
+                            ui.small(labels.join(", "));
+                        }
+                        if let Some((layer, key)) = triggers.first().copied() {
+                            if ui
+                                .add_enabled(
+                                    !self.pending,
+                                    egui::Button::new(
+                                        egui::RichText::new("\u{F0E2}").color(MOCHA.yellow),
+                                    ),
+                                )
+                                .on_hover_text("revert this key to factory (drops the macro)")
+                                .clicked()
+                            {
+                                undo_binding = Some((layer, key));
+                            }
+                        }
+                        if ui
+                            .add_enabled(
+                                !self.pending,
+                                egui::Button::new(egui::RichText::new("\u{F1F8}").color(MOCHA.red)),
+                            )
+                            .on_hover_text("delete this macro (later macros shift up)")
+                            .clicked()
+                        {
+                            delete_slot = Some(slot);
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+        if let Some((layer, index)) = undo_binding {
+            self.pending = true;
+            self.status = "reverting to factory…".into();
+            self.send(Job::RestoreKey { layer, index });
+        }
+        if let Some(slot) = delete_slot {
+            self.pending = true;
+            self.status = "deleting macro…".into();
+            self.send(Job::MacroDel { slot });
+        }
     }
 
     fn ui_themes(&mut self, ui: &mut egui::Ui) {
@@ -1210,8 +1343,7 @@ impl eframe::App for GuiApp {
         };
         if !self.pending && self.last_refresh.elapsed() >= retry_every {
             self.last_refresh = Instant::now();
-            self.pending = true;
-            self.send(Job::Read);
+            self.refresh();
         }
         if self.pending {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -1253,8 +1385,7 @@ impl eframe::App for GuiApp {
                     )
                     .clicked()
                     {
-                        self.pending = true;
-                        self.send(Job::Read);
+                        self.refresh();
                     }
                 });
             });
