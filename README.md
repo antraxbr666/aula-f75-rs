@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.28</b></p>
+<p align="center"><b>v0.1.29</b></p>
 
 ![AULA F75 interface showing the keyboard and themes](assets/screenshot-aula-f75-rs.png)
 
@@ -66,7 +66,9 @@ cargo build --release        # → target/release/aula-f75
 
 ### 📦 Release builds
 
-Every version tag (`vX.Y.Z`) publishes a **Linux x86_64** archive on [GitHub Releases](https://github.com/fredjunior54/aula-f75-rs/releases). The archive contains `aula-f75`, the udev rule, desktop launcher and app icon; verify it with the accompanying `SHA256SUMS` file. It needs a GNU/Linux host with compatible `glibc` and `libudev` (`systemd-libs` on Arch) plus the included udev rule for non-root HID access.
+Every version tag (`vX.Y.Z`) publishes a **Linux x86_64** archive on [GitHub Releases](https://github.com/fredjunior54/aula-f75-rs/releases). The archive contains `aula-f75`, the udev rule, desktop launcher, ready-to-install hicolor icons and license notices; verify it with the accompanying `SHA256SUMS` file. It needs a GNU/Linux host with compatible `glibc` and `libudev` (`systemd-libs` on Arch) plus the included udev rule for non-root HID access.
+
+The archive's `icons/hicolor/{64x64,128x128,256x256}/apps/aula-f75-rs.png` files are ready for a future AUR package to install under `/usr/share/icons/hicolor/`. The application license is `LICENSE`; third-party notices are in `LICENSES/` and `assets/LICENSE-NerdFonts.txt`. No AUR package is included yet.
 
 ### 🐧 Linux: permissions without sudo
 
@@ -236,4 +238,4 @@ aula-f75 keys                # ⌨️ key names + LED index + x/y
 
 ## 📄 License
 
-**MIT**
+**MIT** — see [`LICENSE`](LICENSE). The ported theme presets retain the [upstream MIT notice](LICENSES/aula-f75-hub-MIT.txt); the embedded font is covered by [`assets/LICENSE-NerdFonts.txt`](assets/LICENSE-NerdFonts.txt).

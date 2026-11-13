@@ -50,6 +50,14 @@ jobs:
           install -Dm644 udev/70-aula-f75.rules "dist/${archive}/udev/70-aula-f75.rules"
           install -Dm644 packaging/aula-f75-rs.desktop "dist/${archive}/packaging/aula-f75-rs.desktop"
           install -Dm644 assets/icon-source.png "dist/${archive}/assets/icon-source.png"
+          install -Dm644 assets/screenshot-aula-f75-rs.png "dist/${archive}/assets/screenshot-aula-f75-rs.png"
+          install -Dm644 assets/LICENSE-NerdFonts.txt "dist/${archive}/assets/LICENSE-NerdFonts.txt"
+          install -Dm644 LICENSE "dist/${archive}/LICENSE"
+          install -Dm644 LICENSES/aula-f75-hub-MIT.txt "dist/${archive}/LICENSES/aula-f75-hub-MIT.txt"
+          for size in 64 128 256; do
+            icon="icons/hicolor/${size}x${size}/apps/aula-f75-rs.png"
+            install -Dm644 "assets/${icon}" "dist/${archive}/${icon}"
+          done
           install -Dm644 README.md "dist/${archive}/README.md"
           tar -C dist -czf "dist/${archive}.tar.gz" "${archive}"
           (
