@@ -23,6 +23,13 @@ use crate::themes;
 use crate::tray;
 use crate::{ipc, macros, remap};
 
+/// Colours the owner asked for on the About tab — Catppuccin **Latte** values,
+/// deliberately not the Mocha palette used by the rest of the UI, so they stay
+/// isolated here instead of leaking into the theme.
+const ABOUT_MAUVE: Color32 = Color32::from_rgb(0x88, 0x39, 0xef);
+const ABOUT_YELLOW: Color32 = Color32::from_rgb(0xdf, 0x8e, 0x1d);
+const ABOUT_GREEN: Color32 = Color32::from_rgb(0x40, 0xa0, 0x2b);
+
 /// The board drawing is baseline 670x290 with 36x27 key rects; scaling it up
 /// keeps the (now 13 px) key legends inside the rects instead of clipping them.
 const BOARD_SCALE: f32 = 1.35;
@@ -373,7 +380,7 @@ enum Section {
     Macros,
     Themes,
     Settings,
-    Device,
+    About,
 }
 
 impl Section {
@@ -388,7 +395,7 @@ impl Section {
             Section::Macros => ("\u{F022}", MOCHA.maroon),
             Section::Themes => ("\u{F1FC}", MOCHA.mauve),
             Section::Settings => ("\u{F013}", MOCHA.blue),
-            Section::Device => ("\u{F05A}", MOCHA.lavender),
+            Section::About => ("\u{F05A}", MOCHA.lavender),
         }
     }
 
@@ -399,7 +406,7 @@ impl Section {
             Section::Macros => "Macros",
             Section::Themes => "Themes",
             Section::Settings => "Settings",
-            Section::Device => "Device",
+            Section::About => "About",
         }
     }
 
@@ -409,7 +416,7 @@ impl Section {
         Section::Macros,
         Section::Themes,
         Section::Settings,
-        Section::Device,
+        Section::About,
     ];
 }
 
@@ -1018,14 +1025,11 @@ impl GuiApp {
         }
     }
 
-    fn ui_device(&mut self, ui: &mut egui::Ui) {
-        section_title(ui, Section::Device, "Device");
-        ui.small(self.device.clone());
-        ui.add_space(6.0);
-        ui.small("Firmware: not exposed over the 2.4G dongle");
+    fn ui_about(&mut self, ui: &mut egui::Ui) {
+        section_title(ui, Section::About, "About");
+        ui.add_space(8.0);
 
-        // App logo, centered at the bottom of the section.
-        ui.add_space(16.0);
+        // App identity, centred: logo, name, version, repo, author.
         let (rgba, size) = tray::logo_rgba();
         let logo = self.logo.get_or_insert_with(|| {
             let color =
@@ -1035,9 +1039,57 @@ impl GuiApp {
         });
         ui.vertical_centered(|ui| {
             ui.add(egui::Image::from_texture(&*logo).fit_to_exact_size(egui::vec2(128.0, 128.0)));
-            ui.add_space(4.0);
-            ui.small(format!("aula-f75-rs v{}", env!("CARGO_PKG_VERSION")));
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("aula-f75-rs")
+                    .size(22.0)
+                    .color(ABOUT_MAUVE)
+                    .strong(),
+            );
+            ui.add_space(2.0);
+            // "v" in yellow, the number in green — one line, two colours.
+            let mut version = egui::text::LayoutJob::default();
+            version.append(
+                "v",
+                0.0,
+                egui::TextFormat {
+                    font_id: egui::FontId::proportional(17.0),
+                    color: ABOUT_YELLOW,
+                    ..Default::default()
+                },
+            );
+            version.append(
+                env!("CARGO_PKG_VERSION"),
+                0.0,
+                egui::TextFormat {
+                    font_id: egui::FontId::proportional(17.0),
+                    color: ABOUT_GREEN,
+                    ..Default::default()
+                },
+            );
+            ui.label(version);
+            ui.add_space(6.0);
+            // Small type: the app is monospaced, so the full URL would wrap
+            // awkwardly inside the 360 px panel at body size.
+            ui.hyperlink_to(
+                egui::RichText::new("github.com/fredjunior54/aula-f75-rs").size(14.0),
+                "https://github.com/fredjunior54/aula-f75-rs",
+            );
+            ui.label(
+                egui::RichText::new("Author: fredjunior54 (antraxbr666@proton.me)")
+                    .size(15.0)
+                    .color(MOCHA.subtext1),
+            );
         });
+
+        // Device facts live below the identity block, left-aligned: they are
+        // technical data, not branding.
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(6.0);
+        ui.label(self.device.clone());
+        ui.add_space(6.0);
+        ui.small("Firmware: not exposed over the 2.4G dongle");
     }
 }
 
@@ -1154,7 +1206,7 @@ impl eframe::App for GuiApp {
                         Section::Macros => self.ui_macros(ui),
                         Section::Themes => self.ui_themes(ui),
                         Section::Settings => self.ui_settings(ui),
-                        Section::Device => self.ui_device(ui),
+                        Section::About => self.ui_about(ui),
                     }
                     ui.add_space(8.0);
                 });

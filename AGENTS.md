@@ -456,8 +456,8 @@ src/
   update) so board markers/lists never go stale when the follow-up read
   fails on a flaky dongle. Don't regress this.
 - Sections (left icon navbar): Lighting, Remap, Macros, Themes, Settings,
-  Device. Live and Per-key were REMOVED at the user's request — do not
-  re-add them. Animation streaming remains CLI-only (`live` subcommand).
+  **About** (renamed from "Device" at the owner's request). Live and Per-key
+  were REMOVED at the user's request — do not re-add them. Animation streaming remains CLI-only (`live` subcommand).
 - Board drawing = editor for the custom RGB layer. Keys with an active
   remap in the selected layer get an orange stroke; selection = white
   stroke; Ctrl-click adds to selection.
@@ -536,11 +536,14 @@ src/
   (there is no `resvg`): render big first (`-w 1024 -h 1024`), then run the
   same trim/extent/border/downscale steps on the PNG.
 - In-app logo: `tray::logo_rgba()` exposes the 256 px straight-alpha bytes so
-  the GUI can reuse them without a PNG decoder — `ui_device` builds one
+  the GUI can reuse them without a PNG decoder — `ui_about` builds one
   `egui::TextureHandle` lazily (`ColorImage::from_rgba_unmultiplied`,
-  `TextureOptions::LINEAR`) and draws it **centered at 128 px at the bottom of
-  the Device tab**, under the transport/battery info, with `aula-f75-rs
-  v{CARGO_PKG_VERSION}` below it. The README shows the same
+  `TextureOptions::LINEAR`) and draws it **centered at 128 px at the top of the
+  About tab**, followed by the name, the version, the repo link and the author;
+  the device facts sit below a separator, left-aligned. The About tab uses
+  **Catppuccin Latte** colours on purpose (`ABOUT_MAUVE #8839ef`,
+  `ABOUT_YELLOW #df8e1d`, `ABOUT_GREEN #40a02b`) — they are the owner's choice
+  and stay isolated in those constants. The README shows the same
   `assets/icon-source.png` as the first thing on the page.
 
 ### 10.2 Fonts and text sizes (read before writing UI strings)
@@ -566,7 +569,7 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
   egui's monochrome NotoEmoji and looks foreign. Icons in use: `\u{F0EB}`
   bulb (Lighting), `\u{F11C}` keyboard (Remap), `\u{F022}` list (Macros),
   `\u{F1FC}` brush (Themes), `\u{F013}` gear (Settings), `\u{F05A}` info
-  (Device), plus `\u{F021}` refresh, `\u{F241}` battery, `\u{F111}` status
+  (About), plus `\u{F021}` refresh, `\u{F241}` battery, `\u{F111}` status
   dot, `\u{F00C}` check, `\u{F00D}` times, `\u{F0E2}` undo, `\u{F0C7}` save,
   `\u{F1F8}` trash, `\u{F186}` moon (sleep), `\u{F017}` clock (debounce),
   `\u{F185}` sun (brightness), `\u{F0E7}` bolt (speed). Buttons build the
@@ -574,7 +577,7 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
   carry its own colour.
 - Section colours (Catppuccin Mocha, via `catppuccin_egui::MOCHA`): Lighting
   **yellow**, Remap **flamingo**, Macros **maroon**, Themes **mauve**, Settings
-  **blue**, Device **lavender**. The navbar draws the glyph at 42 px inside a
+  **blue**, About **lavender**. The navbar draws the glyph at 42 px inside a
   64x60 cell (surface0 fill when active) and the panel headings repeat
   glyph+name in the same colour at 24 px. The app name is **`aula-f75-rs`**
   in mauve in the header, window title and tray title/tooltip; the executable

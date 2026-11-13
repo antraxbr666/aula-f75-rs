@@ -23,7 +23,7 @@ const ICON_SIZE_LARGE: i32 = 256;
 const ICON_SIZE_SMALL: i32 = 64;
 
 /// The app logo as straight-alpha RGBA, plus its square dimension.
-/// Used by the window icon and by the in-app logo on the Device tab.
+/// Used by the window icon and by the in-app logo on the About tab.
 pub fn logo_rgba() -> (&'static [u8], u32) {
     (ICON_256, ICON_SIZE_LARGE as u32)
 }
