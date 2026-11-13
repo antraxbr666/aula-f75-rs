@@ -566,10 +566,10 @@ pub fn label(name: &str) -> &str {
         "pgup" => "pu",
         "pgdn" => "pd",
         "insert" => "ins",
-        "up" => "up",
-        "down" => "dn",
-        "left" => "lt",
-        "right" => "rt",
+        "up" => "\u{F062}",
+        "down" => "\u{F063}",
+        "left" => "\u{F060}",
+        "right" => "\u{F061}",
         other => other,
     }
 }

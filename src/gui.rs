@@ -38,6 +38,7 @@ const BOARD_SCALE: f32 = 1.35;
 
 enum Job {
     Read,
+    Battery,
     ApplyLed(Vec<u8>),
     ApplyRgb {
         per_key: Vec<[u8; 3]>,
@@ -78,6 +79,8 @@ enum Reply {
         macros: Vec<macros::Macro>,
     },
     Done(String),
+    /// Lightweight periodic update that does not block controls.
+    Battery(Option<u8>),
     /// A keymap layer was written; `block` is the final layer content so the
     /// GUI can update its state immediately (board markers, remap list)
     /// without waiting for the follow-up hardware re-read (which can fail
@@ -121,6 +124,10 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                     },
                     Err(e) => Reply::Error(format!("read failed: {e:#}")),
                 },
+                Err(e) => Reply::Error(format!("no device: {e:#}")),
+            },
+            Job::Battery => match open_kb(&mut api) {
+                Ok(kb) => Reply::Battery(kb.battery().unwrap_or(None)),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::ApplyLed(block) => match open_kb(&mut api) {
@@ -522,26 +529,12 @@ fn action(
     color: Color32,
     text: &str,
 ) -> egui::Response {
-    action_sized(ui, enabled, glyph, color, text, 18.0, 17.0)
-}
-
-/// Same as [`action`] with explicit glyph/text sizes — the header needs a
-/// bigger refresh glyph than the panel buttons.
-fn action_sized(
-    ui: &mut egui::Ui,
-    enabled: bool,
-    glyph: &str,
-    color: Color32,
-    text: &str,
-    glyph_px: f32,
-    text_px: f32,
-) -> egui::Response {
     let mut job = egui::text::LayoutJob::default();
     job.append(
         glyph,
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::proportional(glyph_px),
+            font_id: egui::FontId::proportional(18.0),
             color,
             ..Default::default()
         },
@@ -550,7 +543,7 @@ fn action_sized(
         &format!("  {text}"),
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::proportional(text_px),
+            font_id: egui::FontId::proportional(17.0),
             color: ui.style().visuals.text_color(),
             ..Default::default()
         },
@@ -798,6 +791,9 @@ impl GuiApp {
                 Reply::Done(msg) => {
                     self.status = msg;
                     self.refresh(); // re-sync from hardware
+                }
+                Reply::Battery(battery) => {
+                    self.battery = battery;
                 }
                 Reply::KeymapsUpdated { msg, layer, block } => {
                     self.status = msg;
@@ -1391,9 +1387,10 @@ impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
 
-        // keep battery/status fresh; when disconnected, retry every 5 s
-        // (the keyboard takes a few seconds to come back after a factory
-        // reset reboot or a replug) instead of every 60 s
+        // While connected, only poll the tiny battery profile block. A full
+        // state read moves RGB, keymap and macro blocks and would periodically
+        // disable controls. When disconnected, a full read is needed to find a
+        // re-enumerated keyboard after a reset or replug.
         let retry_every = if self.connected {
             Duration::from_secs(60)
         } else {
@@ -1401,7 +1398,11 @@ impl eframe::App for GuiApp {
         };
         if !self.pending && self.last_refresh.elapsed() >= retry_every {
             self.last_refresh = Instant::now();
-            self.refresh();
+            if self.connected {
+                self.send(Job::Battery);
+            } else {
+                self.refresh();
+            }
         }
         if self.pending {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -1451,21 +1452,6 @@ impl eframe::App for GuiApp {
                         );
                     });
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if action_sized(
-                        ui,
-                        !self.pending,
-                        "\u{F021}",
-                        MOCHA.sapphire,
-                        "refresh",
-                        22.0,
-                        18.0,
-                    )
-                    .clicked()
-                    {
-                        self.refresh();
-                    }
-                });
             });
         });
 
