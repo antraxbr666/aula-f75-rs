@@ -34,7 +34,7 @@ const ABOUT_GREEN: Color32 = Color32::from_rgb(0x40, 0xa0, 0x2b);
 /// keeps the (now 13 px) key legends inside the rects instead of clipping them.
 const BOARD_SCALE: f32 = 1.35;
 
-/// ---- worker (device IO) ----
+// ---- worker (device IO) ----
 
 enum Job {
     Read,
@@ -49,15 +49,12 @@ enum Job {
         index: u8,
         entry: [u8; 4],
     },
-    MacroSet {
-        slot: usize,
+    SaveMacro {
+        slot: Option<usize>,
         name: String,
         seq: String,
-    },
-    MacroAssign {
         layer: u8,
-        key: u8,
-        macro_idx: u8,
+        keys: Vec<u8>,
         mode: u8,
     },
     MacroDel {
@@ -77,8 +74,8 @@ enum Reply {
         battery: Option<u8>,
         device: String,
         keymaps: [Vec<u8>; 2],
-        /// (name, event count) per macro slot, in store order.
-        macros: Vec<(String, usize)>,
+        /// Macros in store order, including their events so an item can be edited.
+        macros: Vec<macros::Macro>,
     },
     Done(String),
     /// A keymap layer was written; `block` is the final layer content so the
@@ -175,13 +172,24 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                 .unwrap_or_else(|e| Reply::Error(format!("remap failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
-            Job::MacroSet { slot, name, seq } => match open_kb(&mut api) {
+            Job::SaveMacro {
+                slot,
+                name,
+                seq,
+                layer,
+                keys,
+                mode,
+            } => match open_kb(&mut api) {
                 Ok(kb) => (|| -> anyhow::Result<String> {
                     if !name.is_ascii() || name.len() > 32 {
                         anyhow::bail!("macro name must be ASCII, max 32 bytes");
                     }
                     let events = macros::parse_sequence(&seq).map_err(anyhow::Error::msg)?;
                     let mut store = macros::Store::parse(&kb.read_macros()?);
+                    let slot = slot.unwrap_or(store.macros.len());
+                    if slot >= 16 {
+                        anyhow::bail!("the keyboard supports at most 16 macros");
+                    }
                     store.set(
                         slot,
                         macros::Macro {
@@ -190,43 +198,17 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                         },
                     );
                     kb.write_macros(&api, &store.build())?;
-                    Ok(format!("macro {slot} '{name}' saved"))
+
+                    let mut block = kb.read_keymap(layer)?;
+                    for key in keys {
+                        let entry = [0x03, mode, 1, slot as u8];
+                        block[key as usize * 4..key as usize * 4 + 4].copy_from_slice(&entry);
+                    }
+                    kb.write_keymap(&api, layer, &block)?;
+                    Ok(format!("macro '{name}' saved and applied"))
                 })()
                 .map(Reply::Done)
                 .unwrap_or_else(|e| Reply::Error(format!("macro save failed: {e:#}"))),
-                Err(e) => Reply::Error(format!("no device: {e:#}")),
-            },
-            Job::MacroAssign {
-                layer,
-                key,
-                macro_idx,
-                mode,
-            } => match open_kb(&mut api) {
-                Ok(kb) => (|| -> anyhow::Result<(String, Vec<u8>)> {
-                    let store = macros::Store::parse(&kb.read_macros()?);
-                    match store.macros.get(macro_idx as usize) {
-                        Some(m) if !m.events.is_empty() => {}
-                        _ => anyhow::bail!("macro {macro_idx} does not exist (save it first)"),
-                    }
-                    let mut block = kb.read_keymap(layer)?;
-                    let entry = [0x03, mode, 1, macro_idx];
-                    block[key as usize * 4..key as usize * 4 + 4].copy_from_slice(&entry);
-                    kb.write_keymap(&api, layer, &block)?;
-                    Ok((
-                        format!(
-                            "{} -> {}",
-                            remap::matrix_name(key).unwrap_or("?"),
-                            remap::entry_desc(&entry)
-                        ),
-                        block,
-                    ))
-                })()
-                .map(|(m, block)| Reply::KeymapsUpdated {
-                    msg: format!("assigned {m}"),
-                    layer,
-                    block,
-                })
-                .unwrap_or_else(|e| Reply::Error(format!("assign failed: {e:#}"))),
                 Err(e) => Reply::Error(format!("no device: {e:#}")),
             },
             Job::MacroDel { slot } => match open_kb(&mut api) {
@@ -236,8 +218,35 @@ fn worker(rx: Receiver<Job>, tx: Sender<Reply>) {
                         anyhow::bail!("macro {slot} does not exist");
                     }
                     store.delete(slot);
+                    // Macro slots are positional. Removing one shifts later slots, so
+                    // adjust both layers before the next read can expose stale bindings.
+                    for layer in 0..2u8 {
+                        let mut block = kb.read_keymap(layer)?;
+                        let mut changed = false;
+                        for key in 0..126usize {
+                            let entry = &mut block[key * 4..key * 4 + 4];
+                            if entry[0] != 0x03 {
+                                continue;
+                            }
+                            if entry[3] as usize == slot {
+                                let factory_block: &[u8; 504] = if layer == 0 {
+                                    &factory::BASE
+                                } else {
+                                    &factory::FN
+                                };
+                                entry.copy_from_slice(&factory_block[key * 4..key * 4 + 4]);
+                                changed = true;
+                            } else if entry[3] as usize > slot {
+                                entry[3] -= 1;
+                                changed = true;
+                            }
+                        }
+                        if changed {
+                            kb.write_keymap(&api, layer, &block)?;
+                        }
+                    }
                     kb.write_macros(&api, &store.build())?;
-                    Ok(format!("macro {slot} deleted"))
+                    Ok(format!("macro {slot} deleted and bindings updated"))
                 })()
                 .map(Reply::Done)
                 .unwrap_or_else(|e| Reply::Error(format!("delete failed: {e:#}"))),
@@ -305,7 +314,7 @@ type ReadState = (
     Option<u8>,
     String,
     [Vec<u8>; 2],
-    Vec<(String, usize)>,
+    Vec<macros::Macro>,
 );
 
 fn read_all(kb: &Keyboard) -> anyhow::Result<ReadState> {
@@ -326,11 +335,7 @@ fn read_all(kb: &Keyboard) -> anyhow::Result<ReadState> {
         p.unwrap_or_default(),
     );
     let keymaps = [kb.read_keymap(0)?, kb.read_keymap(1)?];
-    let macros = macros::Store::parse(&kb.read_macros()?)
-        .macros
-        .iter()
-        .map(|m| (m.name.clone(), m.events.len()))
-        .collect();
+    let macros = macros::Store::parse(&kb.read_macros()?).macros;
     Ok((led_block, per_key, battery, device, keymaps, macros))
 }
 
@@ -412,7 +417,7 @@ fn theme_card(
     resp
 }
 
-/// ---- GUI ----
+// ---- GUI ----
 
 /// Sections reachable from the left icon navbar.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -591,7 +596,8 @@ pub struct GuiApp {
     // remap / macros
     remap_layer: u8,
     remap_target: String,
-    macro_slot: usize,
+    macro_editing: Option<usize>,
+    confirm_macro_delete: Option<usize>,
     macro_name: String,
     macro_seq: String,
     macro_mode: u8,
@@ -601,8 +607,8 @@ pub struct GuiApp {
     logo: Option<egui::TextureHandle>,
     /// Preview thumbnails of the built-in themes, one texture per preset.
     theme_previews: std::collections::HashMap<&'static str, egui::TextureHandle>,
-    /// Stored macros as (name, event count), read with every refresh.
-    macros: Option<Vec<(String, usize)>>,
+    /// Stored macros, read with every refresh.
+    macros: Option<Vec<macros::Macro>>,
 }
 
 impl Default for GuiApp {
@@ -630,7 +636,8 @@ impl Default for GuiApp {
             confirm_reset: false,
             remap_layer: 0,
             remap_target: String::new(),
-            macro_slot: 0,
+            macro_editing: None,
+            confirm_macro_delete: None,
             macro_name: String::new(),
             macro_seq: String::new(),
             macro_mode: 1,
@@ -709,10 +716,10 @@ impl GuiApp {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for layer in 0..2usize {
+        for (layer, block) in km.iter().enumerate() {
             for key in 0..126usize {
                 let o = key * 4;
-                let e = &km[layer][o..o + 4];
+                let e = &block[o..o + 4];
                 if e[0] == 0x03 && e[3] == idx {
                     out.push((layer as u8, key as u8));
                 }
@@ -1003,9 +1010,21 @@ impl GuiApp {
 
     fn ui_macros(&mut self, ui: &mut egui::Ui) {
         section_title(ui, Section::Macros, "Macros");
+        ui.label("Select keys on the board, then create the macro they should run.");
+        ui.small(format!("selected: {}", selected_names(&self.selected)));
+        ui.add_space(6.0);
+
         ui.horizontal(|ui| {
-            ui.label("slot:");
-            ui.add(egui::DragValue::new(&mut self.macro_slot).range(0..=15));
+            if let Some(slot) = self.macro_editing {
+                ui.strong(format!("editing macro #{slot}"));
+                if ui.button("new macro").clicked() {
+                    self.macro_editing = None;
+                    self.macro_name.clear();
+                    self.macro_seq.clear();
+                }
+            } else {
+                ui.strong("new macro");
+            }
             egui::ComboBox::from_id_salt("macro-mode")
                 .selected_text(
                     match self.macro_mode {
@@ -1022,8 +1041,6 @@ impl GuiApp {
                 });
         });
         ui.add_space(6.0);
-        // Labels above the fields: the old layout put the hint *below* the
-        // input, so it was impossible to tell which field was the name.
         ui.label("name");
         ui.add(
             egui::TextEdit::singleline(&mut self.macro_name)
@@ -1038,110 +1055,90 @@ impl GuiApp {
                 .desired_width(f32::INFINITY),
         );
         ui.small("tokens: h · enter · ctrl+shift+t · ^shift (hold) · shift (release) · wait:300");
-        ui.horizontal(|ui| {
-            if action(ui, !self.pending, "\u{F0C7}", MOCHA.blue, "save").clicked() {
-                self.pending = true;
-                self.status = "saving macro…".into();
-                self.send(Job::MacroSet {
-                    slot: self.macro_slot,
-                    name: self.macro_name.clone(),
-                    seq: self.macro_seq.clone(),
-                });
-            }
-            if action(ui, !self.pending, "\u{F1F8}", MOCHA.red, "delete").clicked() {
-                self.pending = true;
-                self.status = "deleting macro…".into();
-                self.send(Job::MacroDel {
-                    slot: self.macro_slot,
-                });
-            }
-        });
-        ui.add_space(6.0);
-        if action(
-            ui,
-            !self.pending && !self.selected.is_empty(),
-            "\u{F11C}",
-            MOCHA.flamingo,
-            "assign macro to selected",
-        )
-        .clicked()
-        {
+        let can_save = !self.pending
+            && (!self.selected.is_empty() || self.macro_editing.is_some())
+            && !self.macro_seq.trim().is_empty();
+        let save_label = if self.selected.is_empty() {
+            "save changes"
+        } else {
+            "save and apply to selected"
+        };
+        if action(ui, can_save, "\u{F0C7}", MOCHA.blue, save_label).clicked() {
             self.pending = true;
-            self.status = "assigning macro…".into();
-            for k in self.selected.iter().copied().collect::<Vec<u8>>() {
-                self.send(Job::MacroAssign {
-                    layer: self.remap_layer,
-                    key: k,
-                    macro_idx: self.macro_slot as u8,
-                    mode: self.macro_mode,
-                });
-            }
+            self.status = "saving macro…".into();
+            self.send(Job::SaveMacro {
+                slot: self.macro_editing,
+                name: self.macro_name.clone(),
+                seq: self.macro_seq.clone(),
+                layer: self.remap_layer,
+                keys: self.selected.iter().copied().collect(),
+                mode: self.macro_mode,
+            });
         }
         if self.pending {
             ui.small("busy — wait for the current operation to finish");
         }
 
-        // Stored macros: what is really in flash, and which keys fire them.
         ui.add_space(12.0);
         ui.separator();
         let stored = self.macros.clone().unwrap_or_default();
         ui.strong(format!("Stored macros ({})", stored.len()));
         if stored.is_empty() {
             ui.small(if self.macros.is_some() {
-                "none — save a macro above"
+                "none — create a macro above"
             } else {
                 "macros not read yet…"
             });
             return;
         }
 
-        let mut undo_binding: Option<(u8, u8)> = None;
-        let mut delete_slot: Option<usize> = None;
+        let mut edit_slot = None;
+        let mut delete_slot = None;
         egui::Grid::new("stored_macros")
             .num_columns(4)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                for (slot, (name, events)) in stored.iter().enumerate() {
+                for (slot, macro_) in stored.iter().enumerate() {
                     ui.small(format!("#{slot}"));
-                    ui.label(if name.is_empty() { "(unnamed)" } else { name });
-                    ui.small(format!("{events} ev"));
+                    if ui
+                        .selectable_label(
+                            self.macro_editing == Some(slot),
+                            if macro_.name.is_empty() {
+                                "(unnamed)"
+                            } else {
+                                &macro_.name
+                            },
+                        )
+                        .on_hover_text("edit this macro")
+                        .clicked()
+                    {
+                        edit_slot = Some(slot);
+                    }
+                    ui.small(format!("{} ev", macro_.events.len()));
                     let triggers = self.macro_triggers(slot as u8);
                     ui.horizontal(|ui| {
-                        if triggers.is_empty() {
-                            ui.small("—");
-                        } else {
-                            let labels: Vec<String> = triggers
-                                .iter()
-                                .map(|(layer, key)| {
-                                    format!(
-                                        "{} ({})",
-                                        remap::matrix_name(*key).unwrap_or("?"),
-                                        if *layer == 0 { "base" } else { "Fn" }
-                                    )
-                                })
-                                .collect();
-                            ui.small(labels.join(", "));
-                        }
-                        if let Some((layer, key)) = triggers.first().copied() {
-                            if ui
-                                .add_enabled(
-                                    !self.pending,
-                                    egui::Button::new(
-                                        egui::RichText::new("\u{F0E2}").color(MOCHA.yellow),
-                                    ),
+                        let labels: Vec<String> = triggers
+                            .iter()
+                            .map(|(layer, key)| {
+                                format!(
+                                    "{} ({})",
+                                    remap::matrix_name(*key).unwrap_or("?"),
+                                    if *layer == 0 { "base" } else { "Fn" }
                                 )
-                                .on_hover_text("revert this key to factory (drops the macro)")
-                                .clicked()
-                            {
-                                undo_binding = Some((layer, key));
-                            }
-                        }
+                            })
+                            .collect();
+                        let binding_labels = if labels.is_empty() {
+                            "—".to_owned()
+                        } else {
+                            labels.join(", ")
+                        };
+                        ui.small(binding_labels);
                         if ui
                             .add_enabled(
                                 !self.pending,
                                 egui::Button::new(egui::RichText::new("\u{F1F8}").color(MOCHA.red)),
                             )
-                            .on_hover_text("delete this macro (later macros shift up)")
+                            .on_hover_text("delete this macro")
                             .clicked()
                         {
                             delete_slot = Some(slot);
@@ -1150,15 +1147,45 @@ impl GuiApp {
                     ui.end_row();
                 }
             });
-        if let Some((layer, index)) = undo_binding {
-            self.pending = true;
-            self.status = "reverting to factory…".into();
-            self.send(Job::RestoreKey { layer, index });
+        if let Some(slot) = edit_slot {
+            let macro_ = &stored[slot];
+            self.macro_editing = Some(slot);
+            self.macro_name.clone_from(&macro_.name);
+            self.macro_seq = macros::format_sequence(&macro_.events);
+            if let Some((layer, key)) = self.macro_triggers(slot as u8).first().copied() {
+                self.remap_layer = layer;
+                if let Some(entry) = self.keymaps.as_ref().and_then(|maps| {
+                    maps[layer as usize].get(key as usize * 4..key as usize * 4 + 4)
+                }) {
+                    self.macro_mode = entry[1];
+                }
+            }
         }
         if let Some(slot) = delete_slot {
-            self.pending = true;
-            self.status = "deleting macro…".into();
-            self.send(Job::MacroDel { slot });
+            self.confirm_macro_delete = Some(slot);
+        }
+        if let Some(slot) = self.confirm_macro_delete {
+            ui.add_space(8.0);
+            ui.colored_label(
+                MOCHA.red,
+                format!("Delete macro #{slot}? Its key bindings will be removed."),
+            );
+            ui.horizontal(|ui| {
+                if action(ui, !self.pending, "\u{F1F8}", MOCHA.red, "delete macro").clicked() {
+                    self.pending = true;
+                    self.status = "deleting macro…".into();
+                    self.send(Job::MacroDel { slot });
+                    self.confirm_macro_delete = None;
+                    if self.macro_editing == Some(slot) {
+                        self.macro_editing = None;
+                        self.macro_name.clear();
+                        self.macro_seq.clear();
+                    }
+                }
+                if ui.button("cancel").clicked() {
+                    self.confirm_macro_delete = None;
+                }
+            });
         }
     }
 

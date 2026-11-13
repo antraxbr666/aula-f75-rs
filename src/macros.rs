@@ -33,6 +33,23 @@ pub struct Event {
     pub press: bool,
 }
 
+/// Formats events in the lossless syntax used when editing a stored macro.
+pub fn format_sequence(events: &[Event]) -> String {
+    events
+        .iter()
+        .map(|event| {
+            format!(
+                "event:{}:{:02X}:{}:{}",
+                event.kind,
+                event.code,
+                if event.press { "press" } else { "release" },
+                event.delay_ms
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl Event {
     fn encode(&self) -> [u8; 4] {
         let d = self.delay_ms as u32;
@@ -109,7 +126,7 @@ impl Store {
     /// Parse the 512-byte store block. A zero first address means no macros.
     pub fn parse(block: &[u8]) -> Store {
         let first_addr = u16::from_le_bytes([block[0], block[1]]) as usize;
-        if first_addr == 0 || first_addr % 4 != 0 {
+        if first_addr == 0 || !first_addr.is_multiple_of(4) {
             return Store::default();
         }
         let count = first_addr / 4;
@@ -210,6 +227,39 @@ pub fn parse_sequence(seq: &str) -> Result<Vec<Event>, String> {
     }
 
     for tok in toks {
+        if let Some(raw) = tok.strip_prefix("event:") {
+            let mut parts = raw.split(':');
+            let kind = parts
+                .next()
+                .ok_or_else(|| format!("bad event '{tok}'"))?
+                .parse()
+                .map_err(|_| format!("bad event '{tok}'"))?;
+            let code = u8::from_str_radix(
+                parts.next().ok_or_else(|| format!("bad event '{tok}'"))?,
+                16,
+            )
+            .map_err(|_| format!("bad event '{tok}'"))?;
+            let press = match parts.next() {
+                Some("press") => true,
+                Some("release") => false,
+                _ => return Err(format!("bad event '{tok}'")),
+            };
+            let delay_ms = parts
+                .next()
+                .ok_or_else(|| format!("bad event '{tok}'"))?
+                .parse()
+                .map_err(|_| format!("bad event '{tok}'"))?;
+            if parts.next().is_some() {
+                return Err(format!("bad event '{tok}'"));
+            }
+            events.push(Event {
+                kind,
+                code,
+                delay_ms,
+                press,
+            });
+            continue;
+        }
         if let Some(ms) = tok.strip_prefix("wait:") {
             let ms: u16 = ms.parse().map_err(|_| format!("bad wait '{tok}'"))?;
             events
@@ -296,5 +346,30 @@ fn modifier_usage(bit: u8) -> u8 {
         0x40 => 0xE6,
         0x80 => 0xE7,
         _ => 0xE0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formatted_sequence_round_trips_every_event_field() {
+        let events = vec![
+            Event {
+                kind: 1,
+                code: 0xE0,
+                delay_ms: 0,
+                press: true,
+            },
+            Event {
+                kind: 0,
+                code: 0x04,
+                delay_ms: 300,
+                press: false,
+            },
+        ];
+
+        assert_eq!(parse_sequence(&format_sequence(&events)).unwrap(), events);
     }
 }
