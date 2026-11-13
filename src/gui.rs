@@ -766,10 +766,12 @@ impl GuiApp {
             egui::Slider::new(&mut self.lighting.brightness, 0..=9)
                 .text(egui::RichText::new("\u{F185}  brightness").color(MOCHA.yellow)),
         );
+        ui.add_space(2.0);
         ui.add(
             egui::Slider::new(&mut self.lighting.speed, 0..=4)
                 .text(egui::RichText::new("\u{F0E7}  speed").color(MOCHA.sapphire)),
         );
+        ui.add_space(6.0);
         egui::ComboBox::from_id_salt("color")
             .selected_text(format!(
                 "\u{F1FC}  {}",
@@ -789,7 +791,7 @@ impl GuiApp {
     fn ui_remap(&mut self, ui: &mut egui::Ui) {
         section_title(ui, Section::Remap, "Remap");
         ui.label("Select keys on the board, then set what they do.");
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label("layer:");
             egui::ComboBox::from_id_salt("remap-layer")
@@ -870,7 +872,7 @@ impl GuiApp {
                 self.status = "reverting to factory…".into();
                 self.send(Job::RestoreKey { layer, index: idx });
             }
-            ui.add_space(4.0);
+            ui.add_space(6.0);
             if action(
                 ui,
                 !self.pending,
@@ -907,7 +909,7 @@ impl GuiApp {
                     ui.selectable_value(&mut self.macro_mode, 4u8, "until any key");
                 });
         });
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.text_edit_singleline(&mut self.macro_name);
         ui.small("name (ASCII)");
         ui.text_edit_singleline(&mut self.macro_seq);
@@ -930,7 +932,7 @@ impl GuiApp {
                 });
             }
         });
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         if action(
             ui,
             !self.pending && !self.selected.is_empty(),
@@ -956,6 +958,7 @@ impl GuiApp {
     fn ui_themes(&mut self, ui: &mut egui::Ui) {
         section_title(ui, Section::Themes, "Themes");
         ui.small("Themes paint the custom layer; applying switches the keyboard to it.");
+        ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             for t in themes::THEMES {
                 let (glyph, color) = theme_glyph(t);
@@ -985,7 +988,7 @@ impl GuiApp {
                     }
                 });
         });
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.add(
             egui::Slider::new(&mut self.debounce, 0..=8)
                 .text(egui::RichText::new("\u{F017}  debounce (ms)").color(MOCHA.yellow)),
@@ -1018,7 +1021,7 @@ impl GuiApp {
     fn ui_device(&mut self, ui: &mut egui::Ui) {
         section_title(ui, Section::Device, "Device");
         ui.small(self.device.clone());
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.small("Firmware: not exposed over the 2.4G dongle");
 
         // App logo, centered at the bottom of the section.

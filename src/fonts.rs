@@ -54,5 +54,8 @@ pub fn install(ctx: &egui::Context) {
     // the text is 17 px (the owner called the old ones "horrible").
     style.spacing.button_padding = egui::vec2(12.0, 8.0);
     style.spacing.interact_size.y = 34.0;
+    // UI convention: stacked widgets get vertical air. egui's default (3 px)
+    // reads as glued controls once the text is 17 px.
+    style.spacing.item_spacing = egui::vec2(8.0, 10.0);
     ctx.set_style(style);
 }

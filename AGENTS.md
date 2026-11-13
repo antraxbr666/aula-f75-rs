@@ -554,7 +554,11 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
 - Text sizes (owner's request: "+3 points everywhere"): `Small` 14,
   **Body/Button/Monospace 17**, `Heading` 23 — egui's defaults were
   9/12.5/18/12. Global `button_padding` is `12x8` and `interact_size.y` is 34,
-  so buttons have room instead of hugging their text.
+  so buttons have room instead of hugging their text. `item_spacing` is
+  `(8, 10)` — egui's default vertical gap is **3 px**, which reads as glued
+  controls at 17 px; that is the UI convention for the whole app, so prefer
+  section-level `add_space(6.0)` between blocks and let 10 px separate the
+  siblings inside a block.
 - **Nerd codepoints are the rule for icons; emoji are forbidden.** The
   embedded CaskaydiaCove covers `U+F000-F385`, `U+F400-F533` and MDI
   `U+F0001-F1AF0`, but **no `U+1F300-1F6FF`** (verified with `fc-query`: only
