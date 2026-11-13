@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.18</b></p>
+<p align="center"><b>v0.1.19</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -81,7 +81,9 @@ aula-f75
 
 Vertical icon navbar on the left; each tab opens in the right panel. The keyboard drawing in the centre shows the **custom layer** (editor) with the real colours read from the hardware.
 
-> 🖴 **Tray:** the default launch starts a resident StatusNotifierItem (quickshell, waybar etc.) and its window. The tray has a **Show** menu (opens or focuses the window) and **Quit** (ends everything). **Left click = toggle:** opens the window when closed, closes it when open. The daemon runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
+> 🖴 **Tray:** `aula-f75` is the normal desktop launch: it starts a resident StatusNotifierItem (quickshell, waybar etc.) and its window. Use `aula-f75 --start-minimized` for autostart with **only the icon**. The tray has a **Show** menu (opens or focuses the window) and **Quit** (ends everything). **Left click = toggle:** opens the window when closed, closes it when open. The daemon runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
+>
+> 🔂 **Single tray instance:** running `aula-f75` again never creates another icon; it asks the resident daemon to open or focus its existing window.
 >
 > 🪟 **Window app ID:** `aula-f75-rs` — use it in niri window rules, e.g. `match app-id="aula-f75-rs"`
 
@@ -108,14 +110,17 @@ spawn-at-startup "aula-f75" "--start-minimized"
 
 **Board highlights:**
 
-- 🏷️ Legends *always visible* (real keycap abbreviations: `bksp`, `caps`, `shift`…)
+- 🏷️ Legends *always visible* (real keycap abbreviations: `bksp`, `caps`, `shift`…; navigation keys use arrow glyphs)
 - 🟠 **Orange** stroke = key with an active remap on the selected layer (gone as soon as you undo)
 - ⬜ Click selects · **Ctrl+click** adds to the selection
-- 🟢 Status + 🔋 battery in the header; automatic reconnection (5 s) after a reset/replug
+- 🟢 Status + 🔋 battery in the header; after the initial/full action sync, only the small battery block is polled every 60 s, so controls stay responsive
+- 🔄 Automatic full reconnection attempt every 5 s after a reset/replug or disconnect
 
 ---
 
 ## ⌨️ CLI
+
+> 🖴 Without a subcommand, `aula-f75` launches the desktop tray workflow described above. The commands below are direct hardware operations; do not run them while the GUI window is open.
 
 ### 💡 Lighting
 
