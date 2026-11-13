@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.9</b></p>
+<p align="center"><b>v0.1.10</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official

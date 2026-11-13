@@ -1,6 +1,6 @@
 [package]
 name = "aula-f75"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 description = "Linux x86_64 (hidraw) configuration tool for the AULA F75 keyboard"
 

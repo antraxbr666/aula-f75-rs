@@ -972,10 +972,22 @@ impl GuiApp {
                 });
         });
         ui.add_space(6.0);
-        ui.text_edit_singleline(&mut self.macro_name);
-        ui.small("name (ASCII)");
-        ui.text_edit_singleline(&mut self.macro_seq);
-        ui.small("h e l l o enter · ctrl+shift+t · wait:300 · ^shift hold");
+        // Labels above the fields: the old layout put the hint *below* the
+        // input, so it was impossible to tell which field was the name.
+        ui.label("name");
+        ui.add(
+            egui::TextEdit::singleline(&mut self.macro_name)
+                .hint_text("e.g. hello")
+                .desired_width(f32::INFINITY),
+        );
+        ui.add_space(2.0);
+        ui.label("sequence");
+        ui.add(
+            egui::TextEdit::singleline(&mut self.macro_seq)
+                .hint_text("h e l l o enter")
+                .desired_width(f32::INFINITY),
+        );
+        ui.small("tokens: h · enter · ctrl+shift+t · ^shift (hold) · shift (release) · wait:300");
         ui.horizontal(|ui| {
             if action(ui, !self.pending, "\u{F0C7}", MOCHA.blue, "save").clicked() {
                 self.pending = true;
