@@ -509,14 +509,21 @@ src/
   background): `assets/icon-256.rgba` feeds the window icon and the tray,
   `assets/icon-64.rgba` is published alongside it for small panels. `ksni`
   wants ARGB32, so `tray::to_argb()` rotates every pixel; egui wants
-  straight RGBA. Render each size **natively from the SVG** (never downscale a
-  bitmap), because `rsvg-convert` is the renderer available here — there is no
-  `resvg`:
+  straight RGBA. `rsvg-convert` is the renderer available here — there is no
+  `resvg`. **Render big, crop to the artwork, pad, then downscale**, otherwise
+  the icon looks small next to other tray icons: the SVG's own margin is
+  asymmetric (artwork is only 85%x79% of the canvas, offset +42 vertically).
+  Measured result after the pipeline: 94.5%x88.3% — the artwork is wider than
+  tall, so the vertical figure cannot get higher without distorting it.
   ```bash
-  rsvg-convert -w 256 -h 256 assets/icon-source.svg -o /tmp/i256.png
-  rsvg-convert -w 64 -h 64 assets/icon-source.svg -o /tmp/i64.png
-  magick /tmp/i256.png -depth 8 rgba:assets/icon-256.rgba
-  magick /tmp/i64.png -depth 8 rgba:assets/icon-64.rgba
+  rsvg-convert -w 1024 -h 1024 assets/icon-source.svg -o /tmp/i1024.png
+  W=$(magick /tmp/i1024.png -trim -format "%w" info:)
+  H=$(magick /tmp/i1024.png -trim -format "%h" info:)
+  S=$(( W > H ? W : H )); P=$(( S * 3 / 100 ))   # 3% breathing room
+  magick /tmp/i1024.png -trim +repage -background none -gravity center \
+    -extent ${S}x${S} -bordercolor none -border $P -filter Lanczos \
+    -resize 256x256 -depth 8 rgba:assets/icon-256.rgba
+  # same, with -resize 64x64 -> rgba:assets/icon-64.rgba
   ```
   Sizes must stay exact (`256*256*4 = 262144`, `64*64*4 = 16384` bytes).
   The tray publishes both pixmaps and lets the host pick (`icon_pixmap`);
