@@ -25,7 +25,7 @@ use protocol::{led, COLORS, EFFECTS};
 #[command(
     name = "aula-f75",
     version,
-    about = "AULA F75 configuration tool (2.4G / Bluetooth)"
+    about = "aula-f75-rs configuration tool (2.4G / Bluetooth)"
 )]
 struct Cli {
     #[command(subcommand)]

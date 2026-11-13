@@ -551,22 +551,45 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
 - It is the **primary** family for both `Proportional` and `Monospace`; the
   fonts bundled with egui stay behind it as fallback, so emoji and any glyph
   Cascadia lacks still render.
-- Text sizes: `Small` 11, **Body/Button/Monospace 14**, `Heading` 20 — egui's
-defaults were 9/12.5/18/12 and were too small on the owner's display.
-- Because of the Nerd Font, these now render (used by the icon navbar):
-  `\u{F0EB}` bulb, `\u{F11C}` keyboard, `\u{F022}` list, `\u{F1FC}` brush,
-  `\u{F013}` gear, `\u{F05A}` info, `\u{F021}` refresh, `\u{F241}` battery,
-  `\u{F060}..\u{F063}` arrows.
+- Text sizes (owner's request: "+3 points everywhere"): `Small` 14,
+  **Body/Button/Monospace 17**, `Heading` 23 — egui's defaults were
+  9/12.5/18/12. Global `button_padding` is `12x8` and `interact_size.y` is 34,
+  so buttons have room instead of hugging their text.
+- **Nerd codepoints are the rule for icons; emoji are forbidden.** The
+  embedded CaskaydiaCove covers `U+F000-F385`, `U+F400-F533` and MDI
+  `U+F0001-F1AF0`, but **no `U+1F300-1F6FF`** (verified with `fc-query`: only
+  `1f0`, `1fa-1ff`, `1fb00-1fbff`) — an emoji here silently falls back to
+  egui's monochrome NotoEmoji and looks foreign. Icons in use: `\u{F0EB}`
+  bulb (Lighting), `\u{F11C}` keyboard (Remap), `\u{F022}` list (Macros),
+  `\u{F1FC}` brush (Themes), `\u{F013}` gear (Settings), `\u{F05A}` info
+  (Device), plus `\u{F021}` refresh, `\u{F241}` battery, `\u{F111}` status
+  dot, `\u{F00C}` check, `\u{F00D}` times, `\u{F0E2}` undo, `\u{F0C7}` save,
+  `\u{F1F8}` trash, `\u{F186}` moon (sleep), `\u{F017}` clock (debounce),
+  `\u{F185}` sun (brightness), `\u{F0E7}` bolt (speed). Buttons build the
+  glyph+text pair with a `LayoutJob` (`action()` in gui.rs) so the glyph can
+  carry its own colour.
+- Section colours (Catppuccin Mocha, via `catppuccin_egui::MOCHA`): Lighting
+  **yellow**, Remap **flamingo**, Macros **maroon**, Themes **mauve**, Settings
+  **blue**, Device **lavender**. The navbar draws the glyph at 42 px inside a
+  64x60 cell (surface0 fill when active) and the panel headings repeat
+  glyph+name in the same colour at 24 px. The app name is **`aula-f75-rs`**
+  in mauve in the header, window title and tray title/tooltip; the executable
+  stays `aula-f75` (CLI/README compatibility).
+- The right control panel is **fixed at 360 px** (`resizable(false)` +
+  `exact_width`) — it must not change width when switching sections.
 - **Unicode arrows `U+2190-2193` are fine now** (Cascadia has them) — the old
   "use ASCII up/dn/lt/rt" rule applied to egui's default font and no longer
   needs to be followed.
 - **U+FE0F (emoji variation selector) is still forbidden**: no font here
   handles it, so `emoji + FE0F` keeps producing a tofu square.
-- Emojis render monochrome; if a label shows a box, prefer a Nerd codepoint
-  over guessing.
-- Board key legends are intentionally `FontId::proportional(10.0)` (hardcoded
-  in the drawing), independent of the scales above — do not tie them to the
-  global styles or the 36x27 key rects will clip.
+- Emojis render monochrome through egui's fallback font — and since the
+  Caskaydia covers none of `1F300-1F6FF`, prefer a Nerd codepoint (see above),
+  never an emoji, for UI icons.
+- Board key legends are `FontId::proportional(13.0)` (15.0 on hover),
+  hardcoded in the drawing, independent of the global styles. The board is
+  drawn at `BOARD_SCALE = 1.2` (canvas 804x348, key rects 43x32) so those
+  legends fit inside the rects — scaling the text without scaling the board
+  clips `shift`/`bksp`.
 
 ---
 

@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::{self, pos2, Color32, Id, Rect, Sense, Stroke, Vec2};
 
+use catppuccin_egui::MOCHA;
+
 use crate::device::Keyboard;
 use crate::factory;
 use crate::keymap::{self, KEYS, PLANE};
@@ -20,6 +22,10 @@ use crate::protocol::{cmd, led, COLORS, EFFECTS};
 use crate::themes;
 use crate::tray;
 use crate::{ipc, macros, remap};
+
+/// The board drawing is baseline 670x290 with 36x27 key rects; scaling it up
+/// keeps the (now 13 px) key legends inside the rects instead of clipping them.
+const BOARD_SCALE: f32 = 1.2;
 
 /// ---- worker (device IO) ----
 
@@ -343,14 +349,18 @@ enum Section {
 }
 
 impl Section {
-    fn icon(self) -> &'static str {
+    /// Nerd glyph + the Catppuccin colour that identifies this section.
+    /// Emoji are not an option: the embedded CaskaydiaCove covers no
+    /// `U+1F300-U+1F6FF`, so they would fall back to egui's monochrome
+    /// NotoEmoji and look nothing like the rest of the UI.
+    fn glyph(self) -> (&'static str, Color32) {
         match self {
-            Section::Lighting => "💡",
-            Section::Remap => "⌨",
-            Section::Macros => "⏺",
-            Section::Themes => "🌈",
-            Section::Settings => "⚙",
-            Section::Device => "ℹ",
+            Section::Lighting => ("\u{F0EB}", MOCHA.yellow),
+            Section::Remap => ("\u{F11C}", MOCHA.flamingo),
+            Section::Macros => ("\u{F022}", MOCHA.maroon),
+            Section::Themes => ("\u{F1FC}", MOCHA.mauve),
+            Section::Settings => ("\u{F013}", MOCHA.blue),
+            Section::Device => ("\u{F05A}", MOCHA.lavender),
         }
     }
 
@@ -381,6 +391,64 @@ struct Lighting {
     brightness: u8,
     speed: u8,
     color: u8,
+}
+
+/// Glyph + colour for a built-in theme, so every theme button carries an
+/// icon in the Catppuccin palette like the rest of the UI.
+fn theme_glyph(name: &str) -> (&'static str, Color32) {
+    match name {
+        "rainbow" => ("\u{F1FC}", MOCHA.pink),
+        "ocean" => ("\u{F0C2}", MOCHA.sapphire),
+        "fire" => ("\u{F06D}", MOCHA.peach),
+        "matrix" => ("\u{F120}", MOCHA.green),
+        "sunset" => ("\u{F185}", MOCHA.yellow),
+        _ => ("\u{F00D}", MOCHA.overlay1),
+    }
+}
+
+/// Button with a coloured Nerd glyph followed by plain text — every action in
+/// the app reads at a glance and shares the same padding/height.
+fn action(
+    ui: &mut egui::Ui,
+    enabled: bool,
+    glyph: &str,
+    color: Color32,
+    text: &str,
+) -> egui::Response {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        glyph,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(18.0),
+            color,
+            ..Default::default()
+        },
+    );
+    job.append(
+        &format!("  {text}"),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(17.0),
+            color: ui.style().visuals.text_color(),
+            ..Default::default()
+        },
+    );
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(job).min_size(Vec2::new(0.0, 36.0)),
+    )
+}
+
+/// Heading of a control panel: the section glyph plus its name, both in the
+/// section's colour.
+fn section_title(ui: &mut egui::Ui, section: Section, name: &str) {
+    let (glyph, color) = section.glyph();
+    ui.heading(
+        egui::RichText::new(format!("{glyph}  {name}"))
+            .size(24.0)
+            .color(color),
+    );
 }
 
 pub struct GuiApp {
@@ -643,7 +711,7 @@ impl GuiApp {
 
 impl GuiApp {
     fn ui_lighting(&mut self, ui: &mut egui::Ui) {
-        ui.heading("💡 Lighting");
+        section_title(ui, Section::Lighting, "Lighting");
         egui::ComboBox::from_id_salt("effect")
             .selected_text(effect_label(self.lighting.effect))
             .show_ui(ui, |ui| {
@@ -652,11 +720,17 @@ impl GuiApp {
                 }
             });
         ui.add_space(6.0);
-        ui.add(egui::Slider::new(&mut self.lighting.brightness, 0..=9).text("☀ brightness"));
-        ui.add(egui::Slider::new(&mut self.lighting.speed, 0..=4).text("⚡ speed"));
+        ui.add(
+            egui::Slider::new(&mut self.lighting.brightness, 0..=9)
+                .text(egui::RichText::new("\u{F185}  brightness").color(MOCHA.yellow)),
+        );
+        ui.add(
+            egui::Slider::new(&mut self.lighting.speed, 0..=4)
+                .text(egui::RichText::new("\u{F0E7}  speed").color(MOCHA.sapphire)),
+        );
         egui::ComboBox::from_id_salt("color")
             .selected_text(format!(
-                "🎨 {}",
+                "\u{F1FC}  {}",
                 COLORS[(self.lighting.color as usize).min(7)].1
             ))
             .show_ui(ui, |ui| {
@@ -665,16 +739,13 @@ impl GuiApp {
                 }
             });
         ui.add_space(6.0);
-        if ui
-            .add_enabled(!self.pending, egui::Button::new("✅ apply lighting"))
-            .clicked()
-        {
+        if action(ui, !self.pending, "\u{F00C}", MOCHA.green, "apply lighting").clicked() {
             self.apply_lighting();
         }
     }
 
     fn ui_remap(&mut self, ui: &mut egui::Ui) {
-        ui.heading("⌨ Remap");
+        section_title(ui, Section::Remap, "Remap");
         ui.label("Select keys on the board, then set what they do.");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -688,12 +759,14 @@ impl GuiApp {
         });
         ui.text_edit_singleline(&mut self.remap_target);
         ui.small("target: esc · ctrl+shift+t · none · macro:0 · consumer:0E9");
-        if ui
-            .add_enabled(
-                !self.pending && !self.selected.is_empty(),
-                egui::Button::new("✅ remap selected"),
-            )
-            .clicked()
+        if action(
+            ui,
+            !self.pending && !self.selected.is_empty(),
+            "\u{F00C}",
+            MOCHA.green,
+            "remap selected",
+        )
+        .clicked()
         {
             match remap::parse_target(&self.remap_target) {
                 Ok(entry) => {
@@ -726,7 +799,7 @@ impl GuiApp {
             let mut revert = Vec::new();
             egui::Grid::new("active_remaps")
                 .num_columns(4)
-                .spacing([12.0, 2.0])
+                .spacing([12.0, 4.0])
                 .show(ui, |ui| {
                     for (layer, idx) in &remaps {
                         let Some(km) = &self.keymaps else { break };
@@ -736,7 +809,12 @@ impl GuiApp {
                         ui.small(remap::matrix_name(*idx).unwrap_or("?"));
                         ui.small(remap::entry_desc(e));
                         if ui
-                            .add_enabled(!self.pending, egui::Button::new("undo").small())
+                            .add_enabled(
+                                !self.pending,
+                                egui::Button::new(
+                                    egui::RichText::new("\u{F0E2}").color(MOCHA.yellow),
+                                ),
+                            )
                             .on_hover_text("revert this key to factory")
                             .clicked()
                         {
@@ -751,7 +829,15 @@ impl GuiApp {
                 self.send(Job::RestoreKey { layer, index: idx });
             }
             ui.add_space(4.0);
-            if ui.button("undo all (restore factory keymaps)").clicked() && !self.pending {
+            if action(
+                ui,
+                !self.pending,
+                "\u{F0E2}",
+                MOCHA.yellow,
+                "undo all (factory keymaps)",
+            )
+            .clicked()
+            {
                 self.pending = true;
                 self.status = "restoring factory keymaps…".into();
                 self.send(Job::RestoreKeymaps);
@@ -760,7 +846,7 @@ impl GuiApp {
     }
 
     fn ui_macros(&mut self, ui: &mut egui::Ui) {
-        ui.heading("⏺ Macros");
+        section_title(ui, Section::Macros, "Macros");
         ui.horizontal(|ui| {
             ui.label("slot:");
             ui.add(egui::DragValue::new(&mut self.macro_slot).range(0..=15));
@@ -785,10 +871,7 @@ impl GuiApp {
         ui.text_edit_singleline(&mut self.macro_seq);
         ui.small("h e l l o enter · ctrl+shift+t · wait:300 · ^shift hold");
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!self.pending, egui::Button::new("💾 save"))
-                .clicked()
-            {
+            if action(ui, !self.pending, "\u{F0C7}", MOCHA.blue, "save").clicked() {
                 self.pending = true;
                 self.status = "saving macro…".into();
                 self.send(Job::MacroSet {
@@ -797,10 +880,7 @@ impl GuiApp {
                     seq: self.macro_seq.clone(),
                 });
             }
-            if ui
-                .add_enabled(!self.pending, egui::Button::new("🗑 delete"))
-                .clicked()
-            {
+            if action(ui, !self.pending, "\u{F1F8}", MOCHA.red, "delete").clicked() {
                 self.pending = true;
                 self.status = "deleting macro…".into();
                 self.send(Job::MacroDel {
@@ -809,12 +889,14 @@ impl GuiApp {
             }
         });
         ui.add_space(4.0);
-        if ui
-            .add_enabled(
-                !self.pending && !self.selected.is_empty(),
-                egui::Button::new("⌨ assign macro to selected"),
-            )
-            .clicked()
+        if action(
+            ui,
+            !self.pending && !self.selected.is_empty(),
+            "\u{F11C}",
+            MOCHA.flamingo,
+            "assign macro to selected",
+        )
+        .clicked()
         {
             self.pending = true;
             self.status = "assigning macro…".into();
@@ -830,11 +912,12 @@ impl GuiApp {
     }
 
     fn ui_themes(&mut self, ui: &mut egui::Ui) {
-        ui.heading("🌈 Themes");
+        section_title(ui, Section::Themes, "Themes");
         ui.small("Themes paint the custom layer; applying switches the keyboard to it.");
         ui.horizontal_wrapped(|ui| {
             for t in themes::THEMES {
-                if ui.button(*t).clicked() && !self.pending {
+                let (glyph, color) = theme_glyph(t);
+                if action(ui, !self.pending, glyph, color, t).clicked() {
                     self.apply_theme(t);
                 }
             }
@@ -842,9 +925,12 @@ impl GuiApp {
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
-        ui.heading("⚙ Settings");
+        section_title(ui, Section::Settings, "Settings");
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.sleep_on, "💤 Sleep");
+            ui.checkbox(
+                &mut self.sleep_on,
+                egui::RichText::new("\u{F186}  Sleep").color(MOCHA.lavender),
+            );
             egui::ComboBox::from_id_salt("sleep")
                 .selected_text(if self.sleep_on {
                     format!("{} s", self.sleep_secs)
@@ -858,29 +944,29 @@ impl GuiApp {
                 });
         });
         ui.add_space(4.0);
-        ui.add(egui::Slider::new(&mut self.debounce, 0..=8).text("⏱ debounce (ms)"));
-        if ui
-            .add_enabled(!self.pending, egui::Button::new("✅ apply settings"))
-            .clicked()
-        {
+        ui.add(
+            egui::Slider::new(&mut self.debounce, 0..=8)
+                .text(egui::RichText::new("\u{F017}  debounce (ms)").color(MOCHA.yellow)),
+        );
+        if action(ui, !self.pending, "\u{F00C}", MOCHA.green, "apply settings").clicked() {
             self.apply_settings();
         }
 
         ui.add_space(8.0);
         if !self.confirm_reset {
-            if ui.button("♻ factory reset").clicked() {
+            if action(ui, true, "\u{F021}", MOCHA.peach, "factory reset").clicked() {
                 self.confirm_reset = true;
             }
         } else {
             ui.horizontal(|ui| {
-                ui.colored_label(Color32::RED, "Reset keyboard to factory?");
-                if ui.button("YES").clicked() {
+                ui.colored_label(MOCHA.red, "Reset keyboard to factory?");
+                if action(ui, true, "\u{F00C}", MOCHA.green, "yes").clicked() {
                     self.confirm_reset = false;
                     self.pending = true;
                     self.status = "sending reset…".into();
                     self.send(Job::FactoryReset);
                 }
-                if ui.button("cancel").clicked() {
+                if action(ui, true, "\u{F00D}", MOCHA.red, "cancel").clicked() {
                     self.confirm_reset = false;
                 }
             });
@@ -888,7 +974,7 @@ impl GuiApp {
     }
 
     fn ui_device(&mut self, ui: &mut egui::Ui) {
-        ui.heading("ℹ Device");
+        section_title(ui, Section::Device, "Device");
         ui.small(self.device.clone());
         ui.add_space(4.0);
         ui.small("Firmware: not exposed over the 2.4G dongle");
@@ -935,16 +1021,20 @@ impl eframe::App for GuiApp {
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("⌨ AULA F75");
+                ui.heading(egui::RichText::new("aula-f75-rs").color(MOCHA.mauve));
                 ui.separator();
-                let dot = if self.connected { "🟢" } else { "🔴" };
-                ui.label(format!("{dot} {}", self.status));
+                let (dot, dot_color) = if self.connected {
+                    ("\u{F111}", MOCHA.green)
+                } else {
+                    ("\u{F111}", MOCHA.red)
+                };
+                ui.label(egui::RichText::new(format!("{dot}  {}", self.status)).color(dot_color));
                 if let Some(b) = self.battery {
                     ui.separator();
-                    ui.label(format!("🔋 {b}%"));
+                    ui.label(egui::RichText::new(format!("\u{F241}  {b}%")).color(MOCHA.green));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("🔄 refresh").clicked() && !self.pending {
+                    if action(ui, !self.pending, "\u{F021}", MOCHA.sapphire, "refresh").clicked() {
                         self.pending = true;
                         self.send(Job::Read);
                     }
@@ -954,28 +1044,44 @@ impl eframe::App for GuiApp {
 
         // left icon navbar: one button per section, hover shows its name
         egui::SidePanel::left("nav")
-            .exact_width(56.0)
+            .exact_width(84.0)
             .show(ctx, |ui| {
-                ui.add_space(6.0);
-                ui.vertical_centered_justified(|ui| {
+                ui.add_space(8.0);
+                ui.vertical_centered(|ui| {
                     for section in Section::ALL {
                         let selected = self.section == section;
-                        let resp = ui
-                            .add_sized(
-                                [44.0, 40.0],
-                                egui::SelectableLabel::new(selected, section.icon()),
-                            )
-                            .on_hover_text(section.hint());
-                        if resp.clicked() {
+                        let (glyph, color) = section.glyph();
+                        let (rect, resp) =
+                            ui.allocate_exact_size(Vec2::new(64.0, 60.0), Sense::click());
+                        if selected {
+                            ui.painter().rect_filled(rect, 10.0, MOCHA.surface0);
+                        } else if resp.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                10.0,
+                                MOCHA.surface0.gamma_multiply(0.45),
+                            );
+                        }
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            glyph,
+                            egui::FontId::proportional(42.0),
+                            color,
+                        );
+                        if resp.on_hover_text(section.hint()).clicked() {
                             self.section = section;
                         }
+                        ui.add_space(4.0);
                     }
                 });
             });
 
-        // right panel: only the selected section's controls
+        // right panel: only the selected section's controls. Fixed width on
+        // purpose: the panel must not jump around while switching sections.
         egui::SidePanel::right("controls")
-            .resizable(true)
+            .resizable(false)
+            .exact_width(360.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.add_space(8.0);
@@ -997,12 +1103,18 @@ impl eframe::App for GuiApp {
             // inside the keyboard and cannot be read back. Painting keys or
             // applying a theme below auto-switches the keyboard to custom,
             // so no banner/button is needed here.
-            let (resp, painter) = ui.allocate_painter(Vec2::new(670.0, 290.0), Sense::click());
+            let (resp, painter) = ui.allocate_painter(
+                Vec2::new(670.0 * BOARD_SCALE, 290.0 * BOARD_SCALE),
+                Sense::click(),
+            );
             let origin = resp.rect.min;
             for key in KEYS {
                 let rect = Rect::from_min_size(
-                    pos2(origin.x + key.x as f32, origin.y + key.y as f32),
-                    Vec2::new(36.0, 27.0),
+                    pos2(
+                        origin.x + key.x as f32 * BOARD_SCALE,
+                        origin.y + key.y as f32 * BOARD_SCALE,
+                    ),
+                    Vec2::new(36.0 * BOARD_SCALE, 27.0 * BOARD_SCALE),
                 );
                 let [r, g, b] = self.per_key[key.led as usize];
                 let fill = Color32::from_rgb(r, g, b);
@@ -1032,7 +1144,7 @@ impl eframe::App for GuiApp {
                 // always-on keycap legend: dark shadow + white text reads on
                 // any LED color
                 let label = keymap::label(key.name);
-                let font = egui::FontId::proportional(if r.hovered() { 11.5 } else { 10.0 });
+                let font = egui::FontId::proportional(if r.hovered() { 15.0 } else { 13.0 });
                 painter.text(
                     rect.center() + Vec2::new(0.7, 0.7),
                     egui::Align2::CENTER_CENTER,
@@ -1091,11 +1203,11 @@ pub fn run() -> anyhow::Result<()> {
     };
 
     eframe::run_native(
-        "aula-f75",
+        "aula-f75-rs",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_app_id(APP_ID)
-                .with_inner_size([1010.0, 440.0])
+                .with_inner_size([1280.0, 700.0])
                 .with_icon(tray::window_icon()),
             ..Default::default()
         },

@@ -5,7 +5,7 @@
 //! lacks, e.g. `U+22A0`). The whole Nerd Fonts range comes along, so UI
 //! strings can use `\u{F0EB}`-style glyphs without another font.
 //!
-//! Base text size is 14 px (egui's default is 12.5) — the owner's choice.
+//! Base text size is 17 px (egui's default is 12.5) — the owner's choice.
 
 use eframe::egui::{self, FontData, FontDefinitions, FontFamily, FontId, TextStyle};
 
@@ -33,22 +33,26 @@ pub fn install(ctx: &egui::Context) {
     style.text_styles = [
         (
             TextStyle::Small,
-            FontId::new(11.0, FontFamily::Proportional),
+            FontId::new(14.0, FontFamily::Proportional),
         ),
-        (TextStyle::Body, FontId::new(14.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(17.0, FontFamily::Proportional)),
         (
             TextStyle::Button,
-            FontId::new(14.0, FontFamily::Proportional),
+            FontId::new(17.0, FontFamily::Proportional),
         ),
         (
             TextStyle::Heading,
-            FontId::new(20.0, FontFamily::Proportional),
+            FontId::new(23.0, FontFamily::Proportional),
         ),
         (
             TextStyle::Monospace,
-            FontId::new(14.0, FontFamily::Monospace),
+            FontId::new(17.0, FontFamily::Monospace),
         ),
     ]
     .into();
+    // Buttons need room to breathe: the egui default padding is too tight once
+    // the text is 17 px (the owner called the old ones "horrible").
+    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.interact_size.y = 34.0;
     ctx.set_style(style);
 }

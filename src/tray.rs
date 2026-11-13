@@ -68,16 +68,16 @@ pub struct AulaTray {
 
 impl ksni::Tray for AulaTray {
     fn id(&self) -> String {
-        "aula-f75".into()
+        "aula-f75-rs".into()
     }
 
     fn title(&self) -> String {
-        "AULA F75".into()
+        "aula-f75-rs".into()
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
-            title: "AULA F75".into(),
+            title: "aula-f75-rs".into(),
             description: "Keyboard configuration tool".into(),
             ..Default::default()
         }
