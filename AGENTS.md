@@ -505,22 +505,21 @@ src/
   stroke, white selection, key legends) are intentional; Mocha base is
   `#1e1e2e`, surface0 `#313244`.
 - Icon bytes are pre-rendered straight-alpha RGBA from
-  `assets/icon-source.svg` (24x24 viewBox, the app logo, transparent
-  background): `assets/icon-256.rgba` feeds the window icon and the tray,
+  `assets/icon-source.png` (512x512 flat blue keyboard, transparent
+  background — a saturated `#2f6ff5`-ish plate that reads on both dark and
+  light panels): `assets/icon-256.rgba` feeds the window icon and the tray,
   `assets/icon-64.rgba` is published alongside it for small panels. `ksni`
   wants ARGB32, so `tray::to_argb()` rotates every pixel; egui wants
-  straight RGBA. `rsvg-convert` is the renderer available here — there is no
-  `resvg`. **Render big, crop to the artwork, pad, then downscale**, otherwise
-  the icon looks small next to other tray icons: the SVG's own margin is
-  asymmetric (artwork is only 85%x79% of the canvas, offset +42 vertically).
-  Measured result after the pipeline: 94.5%x88.3% — the artwork is wider than
-  tall, so the vertical figure cannot get higher without distorting it.
+  straight RGBA. **Crop to the artwork, pad, then downscale**, otherwise the
+  icon looks small next to other tray icons: the source has a wide asymmetric
+  margin (artwork is 470x377 of the 512 canvas, offset +74 vertically).
+  Measured after the pipeline: 96%x78% — the artwork is much wider than tall,
+  so the vertical figure cannot get higher without distorting it.
   ```bash
-  rsvg-convert -w 1024 -h 1024 assets/icon-source.svg -o /tmp/i1024.png
-  W=$(magick /tmp/i1024.png -trim -format "%w" info:)
-  H=$(magick /tmp/i1024.png -trim -format "%h" info:)
+  W=$(magick assets/icon-source.png -trim -format "%w" info:)
+  H=$(magick assets/icon-source.png -trim -format "%h" info:)
   S=$(( W > H ? W : H )); P=$(( S * 3 / 100 ))   # 3% breathing room
-  magick /tmp/i1024.png -trim +repage -background none -gravity center \
+  magick assets/icon-source.png -trim +repage -background none -gravity center \
     -extent ${S}x${S} -bordercolor none -border $P -filter Lanczos \
     -resize 256x256 -depth 8 rgba:assets/icon-256.rgba
   # same, with -resize 64x64 -> rgba:assets/icon-64.rgba
@@ -528,9 +527,9 @@ src/
   Sizes must stay exact (`256*256*4 = 262144`, `64*64*4 = 16384` bytes).
   The tray publishes both pixmaps and lets the host pick (`icon_pixmap`);
   a 22 px panel downsamples the 256 one, which looks better than a pre-shrunk
-  64 in most hosts. Colour note: the keyboard body is `#3a404c`, which sits
-  close to Mocha base `#1e1e2e` — the white keycaps and the blue spacebar
-  (`#3b82f6`) are what keep the silhouette readable on a dark panel.
+  64 in most hosts. For an SVG source the renderer here is `rsvg-convert`
+  (there is no `resvg`): render big first (`-w 1024 -h 1024`), then run the
+  same trim/extent/border/downscale steps on the PNG.
 
 ### 10.2 Fonts and text sizes (read before writing UI strings)
 
