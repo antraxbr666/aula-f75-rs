@@ -504,6 +504,42 @@ pub fn find(name: &str) -> Option<&'static Key> {
     KEYS.iter().find(|k| k.name.eq_ignore_ascii_case(name))
 }
 
+/// Distance kept between two neighbouring caps, in base-layout px. Physical
+/// keyboards leave ~4-5% of the pitch; 3 px on a 36 px cell read as glued caps.
+pub const KEY_SPACING: f32 = 6.0;
+/// Drawn width of a 1u cap, i.e. the nominal cell minus the spacing.
+pub const KEY_MIN_W: f32 = 30.0;
+pub const KEY_HEIGHT: f32 = 29.0;
+
+/// Width of a key in the base layout: the distance to the next key on the same
+/// row minus the spacing. `KEYS` only stores x/y, but it comes straight from
+/// the official `KB.ini`, so this recovers the real caps (shift 2.25u, space
+/// 6.25u, backspace 1.75u …) instead of drawing every key as 1u. The F row
+/// (y <= 30) is spaced cosmetically in groups of four, so there it stays 1u.
+pub fn width(key: &Key) -> f32 {
+    if key.y <= 30 {
+        return KEY_MIN_W;
+    }
+    let next = KEYS
+        .iter()
+        .filter(|k| (k.y as i32 - key.y as i32).abs() <= 6 && k.x > key.x)
+        .map(|k| k.x)
+        .min();
+    match next {
+        Some(nx) => ((nx - key.x) as f32 - KEY_SPACING).clamp(KEY_MIN_W, 240.0),
+        None => KEY_MIN_W,
+    }
+}
+
+/// Centre of a key cap, in base-layout px — used by the board drawing and by
+/// the theme gradients.
+pub fn center(key: &Key) -> (f32, f32) {
+    (
+        key.x as f32 + width(key) / 2.0,
+        key.y as f32 + KEY_HEIGHT / 2.0,
+    )
+}
+
 /// Short on-keycap legend for the board drawing (long names don't fit).
 pub fn label(name: &str) -> &str {
     match name {

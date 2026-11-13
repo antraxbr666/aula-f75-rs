@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.7</b></p>
+<p align="center"><b>v0.1.8</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -28,7 +28,7 @@
 | 🔀 | **Per-key remapping** (base + Fn layers) with *combo*, media, macro or `none` |
 | 📋 | **Active remaps**: live list of everything that differs from factory, with per-key *undo* and *undo all* |
 | ⏺️ | **Macros stored in the keyboard** (16 slots) with combos, holds and waits |
-| 🌈 | **Per-key RGB** plus ready-made themes (*rainbow, ocean, fire, matrix, sunset, off*) |
+| 🌈 | **Per-key RGB** plus **24 ready-made themes** with previews (ported from [aula-f75-hub](https://github.com/bakiakyol/aula-f75-hub), MIT) |
 | 🎵 | **Real-time animations** at ~14 fps straight from the PC (CLI) |
 | 🔋 | **Battery**, sleep, debounce, win-lock, factory reset — all from the GUI |
 | 🧵 | All HID IO lives on its own thread — **the interface never blocks** |
@@ -102,7 +102,7 @@ spawn-at-startup "aula-f75" "tray" "--no-window"
 | 💡 | **Lighting** | effect (17 hardware values), brightness 0-9, speed 0-4, colour 0-7 |
 | ⌨ | **Remap** | select keys on the board → apply a target; **Active remaps** with per-key *undo* and *undo all* |
 | ⏺ | **Macros** | save/delete slots and bind them to keys with run modes |
-| 🌈 | **Themes** | ready-made themes in one click (applying switches to custom) |
+| 🌈 | **Themes** | list of themes with live previews; the stored one is highlighted (applying switches to custom) |
 | ⚙ | **Settings** | 💤 sleep (same values as the original app), ⏱ debounce, ♻ factory reset with confirmation |
 | ℹ | **About** | logo, name, version, repo link and author — plus transport, VID:PID, HID strings and the firmware note |
 

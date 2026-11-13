@@ -430,8 +430,14 @@ src/
                FN_FUNCS, CONSUMERS, entry_desc(), parse_target()
   macros.rs    Event/Store parse+build (with the 126-127 dodge),
                parse_sequence()
-  themes.rs    built-in themes computed from key x/y (rainbow, ocean, fire,
-               matrix, sunset, off) → per-key blocks
+  themes.rs    24 presets → per-key blocks. The 23 colour themes are PORTED
+               from bakiakyol/aula-f75-hub `aula/presets.py` (MIT © 2026 Baki
+               Akyol): a preset is `stops[]` (position 0..1 → RGB) along a
+               `Dir` (X/Y/Diagonal/Center) plus `accents{key: RGB}`, with key
+               positions normalised over the board and `center` elliptical.
+               `off` is ours (all black). `colors(name)` returns the 90 LED
+               colours — used by `block()` to build the 0x02 payload AND by the
+               GUI to draw previews and to detect which theme is stored.
   live.rs      Anim::{Rainbow,Wave,Fire,Solid}, band construction, play()
   factory.rs   factory BASE/FN keymap constants (see §6.6!)
   gui.rs       egui app: worker thread + mpsc jobs, sections, board drawing
@@ -592,6 +598,15 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
 - Emojis render monochrome through egui's fallback font — and since the
   Caskaydia covers none of `1F300-1F6FF`, prefer a Nerd codepoint (see above),
   never an emoji, for UI icons.
+- Themes tab: a `ScrollArea` list of `Button::image_and_text`, one 200x86
+  **preview texture per preset generated at runtime** (`theme_preview_image`:
+  the board miniature painted with `themes::colors`), so no image assets or
+  decoders exist and a preview can never drift from what is written. The
+  button is highlighted when `per_key == themes::colors(t)`: `surface1` +
+  green stroke when the table matches **and** `ACTIVE_EFFECT == 32` (stored
+  and lit), `surface0` when it matches but the firmware shows effect 1-31.
+  Any hand-painted key breaks the match, so nothing is highlighted — that is
+  correct, the firmware stores no theme name, only the table.
 - Board drawing (`gui.rs`): **key caps use their real width**, not one
   rectangle for everything. `key_width()` derives it from the `KB.ini` layout
   (`x` of the next key on the same row minus `KEY_GAP`, clamped to 1u), which

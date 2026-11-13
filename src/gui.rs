@@ -33,34 +33,6 @@ const ABOUT_GREEN: Color32 = Color32::from_rgb(0x40, 0xa0, 0x2b);
 /// The board drawing is baseline 670x290 with 36x27 key rects; scaling it up
 /// keeps the (now 13 px) key legends inside the rects instead of clipping them.
 const BOARD_SCALE: f32 = 1.35;
-/// Distance kept between two neighbouring caps, in base-layout px. Physical
-/// keyboards leave ~4-5% of the pitch; 3 px on a 36 px cell read as glued
-/// caps, which is why this is 6.
-const KEY_SPACING: f32 = 6.0;
-/// Drawn width of a 1u cap, i.e. the nominal cell minus the spacing.
-const KEY_MIN_W: f32 = 30.0;
-const KEY_HEIGHT: f32 = 29.0;
-
-/// Width of a key in the base layout: the distance to the next key on the same
-/// row minus the spacing. `keymap::KEYS` only stores x/y, but it comes straight
-/// from the official `KB.ini`, so this recovers the real caps (shift 2.25u,
-/// space 6.25u, backspace 1.75u …) instead of drawing every key as 1u. The F
-/// row (y <= 30) is spaced cosmetically in groups of four, so there it stays
-/// 1u and the group gaps come from the table.
-fn key_width(key: &keymap::Key) -> f32 {
-    if key.y <= 30 {
-        return KEY_MIN_W;
-    }
-    let next = KEYS
-        .iter()
-        .filter(|k| (k.y as i32 - key.y as i32).abs() <= 6 && k.x > key.x)
-        .map(|k| k.x)
-        .min();
-    match next {
-        Some(nx) => ((nx - key.x) as f32 - KEY_SPACING).clamp(KEY_MIN_W, 240.0),
-        None => KEY_MIN_W,
-    }
-}
 
 /// ---- worker (device IO) ----
 
@@ -430,15 +402,39 @@ struct Lighting {
 
 /// Glyph + colour for a built-in theme, so every theme button carries an
 /// icon in the Catppuccin palette like the rest of the UI.
-fn theme_glyph(name: &str) -> (&'static str, Color32) {
-    match name {
-        "rainbow" => ("\u{F1FC}", MOCHA.pink),
-        "ocean" => ("\u{F0C2}", MOCHA.sapphire),
-        "fire" => ("\u{F06D}", MOCHA.peach),
-        "matrix" => ("\u{F120}", MOCHA.green),
-        "sunset" => ("\u{F185}", MOCHA.yellow),
-        _ => ("\u{F00D}", MOCHA.overlay1),
+/// Miniature of the board painted with a theme's colours. Generated from the
+/// same data that is written to the keyboard, so a preview can never drift
+/// from the preset — and no image assets/decoders are needed.
+fn theme_preview_image(name: &str, w: usize, h: usize) -> egui::ColorImage {
+    let mut img = egui::ColorImage::new([w, h], MOCHA.mantle);
+    let colors = themes::colors(name);
+    let (mut min_x, mut min_y) = (f32::MAX, f32::MAX);
+    let (mut max_x, mut max_y) = (f32::MIN, f32::MIN);
+    for key in KEYS {
+        min_x = min_x.min(key.x as f32);
+        min_y = min_y.min(key.y as f32);
+        max_x = max_x.max(key.x as f32 + keymap::width(key));
+        max_y = max_y.max(key.y as f32 + keymap::KEY_HEIGHT);
     }
+    let pad = 3.0;
+    let scale =
+        ((w as f32 - 2.0 * pad) / (max_x - min_x)).min((h as f32 - 2.0 * pad) / (max_y - min_y));
+    let ox = (w as f32 - (max_x - min_x) * scale) / 2.0;
+    let oy = (h as f32 - (max_y - min_y) * scale) / 2.0;
+    for key in KEYS {
+        let [r, g, b] = colors[key.led as usize];
+        let c = Color32::from_rgb(r, g, b);
+        let x0 = ox + (key.x as f32 - min_x) * scale;
+        let y0 = oy + (key.y as f32 - min_y) * scale;
+        let x1 = x0 + keymap::width(key) * scale;
+        let y1 = y0 + keymap::KEY_HEIGHT * scale;
+        for py in (y0.round() as usize)..(y1.round() as usize).min(h) {
+            for px in (x0.round() as usize)..(x1.round() as usize).min(w) {
+                img.pixels[py * w + px] = c;
+            }
+        }
+    }
+    img
 }
 
 /// Button with a coloured Nerd glyph followed by plain text — every action in
@@ -532,6 +528,8 @@ pub struct GuiApp {
     last_refresh: Instant,
     /// In-app logo (built lazily from `tray::logo_rgba()` on first use).
     logo: Option<egui::TextureHandle>,
+    /// Preview thumbnails of the built-in themes, one texture per preset.
+    theme_previews: std::collections::HashMap<&'static str, egui::TextureHandle>,
 }
 
 impl Default for GuiApp {
@@ -565,6 +563,7 @@ impl Default for GuiApp {
             macro_mode: 1,
             last_refresh: Instant::now(),
             logo: None,
+            theme_previews: std::collections::HashMap::new(),
         };
         app.send(Job::Read);
         app
@@ -966,14 +965,67 @@ impl GuiApp {
         section_title(ui, Section::Themes, "Themes");
         ui.small("Themes paint the custom layer; applying switches the keyboard to it.");
         ui.add_space(6.0);
-        ui.horizontal_wrapped(|ui| {
-            for t in themes::THEMES {
-                let (glyph, color) = theme_glyph(t);
-                if action(ui, !self.pending, glyph, color, t).clicked() {
-                    self.apply_theme(t);
+
+        let effect = self
+            .led
+            .as_ref()
+            .map(|b| b[led::ACTIVE_EFFECT])
+            .unwrap_or(0);
+        let custom_active = self.led.is_some() && effect == 32;
+
+        // One 200x86 texture per theme, built on first visit to this tab.
+        let preview_size = [200usize, 86usize];
+        let textures: Vec<(egui::TextureHandle, bool, bool)> = themes::THEMES
+            .iter()
+            .map(|t| {
+                let stored = self.led.is_some() && self.per_key == themes::colors(t);
+                let handle = self.theme_previews.entry(t).or_insert_with(|| {
+                    let img = theme_preview_image(t, preview_size[0], preview_size[1]);
+                    ui.ctx()
+                        .load_texture(format!("theme-{t}"), img, egui::TextureOptions::LINEAR)
+                });
+                (handle.clone(), stored, stored && custom_active)
+            })
+            .collect();
+
+        egui::ScrollArea::vertical()
+            .id_salt("theme-list")
+            .max_height((ui.available_height() - 8.0).max(120.0))
+            .show(ui, |ui| {
+                for ((tex, stored, active), name) in textures.iter().zip(themes::THEMES) {
+                    let mut button = egui::Button::image_and_text(
+                        egui::Image::from_texture(tex).fit_to_exact_size(egui::vec2(200.0, 86.0)),
+                        {
+                            let [r, g, b] = themes::signature_rgb(name);
+                            egui::RichText::new(*name)
+                                .size(17.0)
+                                .color(Color32::from_rgb(r, g, b))
+                        },
+                    );
+                    if *active {
+                        button = button
+                            .fill(MOCHA.surface1)
+                            .stroke(Stroke::new(1.5_f32, MOCHA.green));
+                    } else if *stored {
+                        // Stored in flash, but the firmware is showing a
+                        // built-in effect (1-31) instead of the custom layer.
+                        button = button.fill(MOCHA.surface0);
+                    }
+                    let resp = ui
+                        .add_enabled(!self.pending, button)
+                        .on_hover_text(if *active {
+                            "stored and currently lit".to_string()
+                        } else if *stored {
+                            format!("stored in the keyboard — firmware is showing effect {effect}")
+                        } else {
+                            String::new()
+                        });
+                    if resp.clicked() {
+                        self.apply_theme(name);
+                    }
+                    ui.add_space(2.0);
                 }
-            }
-        });
+            });
     }
 
     fn ui_settings(&mut self, ui: &mut egui::Ui) {
@@ -1231,11 +1283,11 @@ impl eframe::App for GuiApp {
             let mut max_x = f32::MIN;
             let mut max_y = f32::MIN;
             for key in KEYS {
-                let w = key_width(key);
+                let w = keymap::width(key);
                 min_x = min_x.min(key.x as f32 * s);
                 min_y = min_y.min(key.y as f32 * s);
                 max_x = max_x.max((key.x as f32 + w) * s);
-                max_y = max_y.max((key.y as f32 + KEY_HEIGHT) * s);
+                max_y = max_y.max((key.y as f32 + keymap::KEY_HEIGHT) * s);
             }
             let pad = 12.0 * s;
             // Offset that centres the drawn artwork inside the allocated rect.
@@ -1254,7 +1306,7 @@ impl eframe::App for GuiApp {
             for key in KEYS {
                 let rect = Rect::from_min_size(
                     pos2(origin.x + key.x as f32 * s, origin.y + key.y as f32 * s),
-                    Vec2::new(key_width(key) * s, KEY_HEIGHT * s),
+                    Vec2::new(keymap::width(key) * s, keymap::KEY_HEIGHT * s),
                 );
                 let [r, g, b] = self.per_key[key.led as usize];
                 // A cap with no colour at all is drawn as a keycap (surface0)
