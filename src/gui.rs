@@ -1394,11 +1394,26 @@ impl eframe::App for GuiApp {
                 );
                 if let Some(b) = self.battery {
                     ui.separator();
-                    ui.label(
-                        egui::RichText::new(format!("\u{F241}  {b}%"))
-                            .color(MOCHA.green)
-                            .size(20.0),
+                    let mut battery = egui::text::LayoutJob::default();
+                    battery.append(
+                        "\u{F241}",
+                        0.0,
+                        egui::TextFormat {
+                            font_id: egui::FontId::proportional(28.0),
+                            color: MOCHA.green,
+                            ..Default::default()
+                        },
                     );
+                    battery.append(
+                        &format!("  {b}%"),
+                        0.0,
+                        egui::TextFormat {
+                            font_id: egui::FontId::proportional(20.0),
+                            color: MOCHA.green,
+                            ..Default::default()
+                        },
+                    );
+                    ui.label(battery);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if action_sized(
