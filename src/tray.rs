@@ -6,7 +6,7 @@
 //! compositor (niri `Mod+C`, the X button) kills only that child, so the icon
 //! stays and "Show" brings the window back.
 //!
-//! Icon: pre-rendered RGBA from `assets/icon-source.png` — 256x256 for the
+//! Icon: pre-rendered RGBA from `assets/icon-source.svg` — 256x256 for the
 //! window and the tray, 64x64 published alongside it for small panels (see
 //! AGENTS.md §10.1 for the regeneration recipe).
 
@@ -16,7 +16,7 @@ use eframe::egui;
 
 use crate::daemon::Daemon;
 
-/// Pre-rendered RGBA (straight alpha) from assets/icon-source.png.
+/// Pre-rendered RGBA (straight alpha) from assets/icon-source.svg.
 static ICON_256: &[u8] = include_bytes!("../assets/icon-256.rgba");
 static ICON_64: &[u8] = include_bytes!("../assets/icon-64.rgba");
 const ICON_SIZE_LARGE: i32 = 256;

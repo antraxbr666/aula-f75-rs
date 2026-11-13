@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
+	<path d="M0 0h24v24H0z" fill="none" />
+	<g fill="none">
+		<defs>
+			<linearGradient id="SVGbJeKreQe" x1="0" x2="1" y1="0" y2="1">
+				<stop offset="0" stop-color="#fff" stop-opacity=".34" />
+				<stop offset=".42" stop-color="#fff" stop-opacity="0" />
+				<stop offset=".62" stop-color="#1d2130" stop-opacity="0" />
+				<stop offset="1" stop-color="#1d2130" stop-opacity=".22" />
+			</linearGradient>
+		</defs>
+		<ellipse cx="12" cy="21.4" fill="#1d2130" fill-opacity=".08" class="wm-shadow" rx="10.2" ry="1.5" />
+		<ellipse cx="12" cy="21.4" fill="#1d2130" fill-opacity=".1" class="wm-shadow" rx="7.6" ry="1" />
+		<path fill="#3a404c" d="M4.5 5.5h15A2.5 2.5 0 0 1 22 8v8.5a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 16.5V8a2.5 2.5 0 0 1 2.5-2.5" class="wm-k" />
+		<path fill="#1d2130" fill-opacity=".4" d="M4.5 5.5h15A2.5 2.5 0 0 1 22 8v8.5a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 16.5V8a2.5 2.5 0 0 1 2.5-2.5" class="wm-k" />
+		<path fill="#3a404c" d="M4.5 4h15A2.5 2.5 0 0 1 22 6.5V15a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 15V6.5A2.5 2.5 0 0 1 4.5 4" class="wm-k" />
+		<path fill="url(#SVGbJeKreQe)" d="M4.5 4h15A2.5 2.5 0 0 1 22 6.5V15a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 15V6.5A2.5 2.5 0 0 1 4.5 4" class="wm-k" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".5" stroke-width=".7" d="M4.6 5.1h14.8" class="wm-shine" />
+		<path fill="#bfc7d2" d="M5.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H5.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M5.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H5.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M5.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H5.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M5.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H5.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M5.3 7.4h1.4" class="wm-shine" />
+		<path fill="#bfc7d2" d="M9.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H9.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M9.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H9.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M9.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H9.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M9.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H9.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M9.3 7.4h1.4" class="wm-shine" />
+		<path fill="#bfc7d2" d="M13.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M13.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M13.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M13.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M13.3 7.4h1.4" class="wm-shine" />
+		<path fill="#bfc7d2" d="M17.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M17.2 7.6h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M17.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M17.2 6.9h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M17.3 7.4h1.4" class="wm-shine" />
+		<path fill="#bfc7d2" d="M7.2 11.4h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M7.2 11.4h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M7.2 10.7h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M7.2 10.7h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M7.3 11.2h1.4" class="wm-shine" />
+		<path fill="#bfc7d2" d="M11.2 11.4h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M11.2 11.4h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M11.2 10.7h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M11.2 10.7h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M11.3 11.2h1.4" class="wm-shine" />
+		<path fill="#bfc7d2" d="M15.2 11.4h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M15.2 11.4h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#bfc7d2" d="M15.2 10.7h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M15.2 10.7h1.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8h-1.6a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M15.3 11.2h1.4" class="wm-shine" />
+		<path fill="#3d7ee0" d="M7.2 15.2h9.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8V16a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#1d2130" fill-opacity=".4" d="M7.2 15.2h9.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8V16a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="#3d7ee0" d="M7.2 14.5h9.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path fill="url(#SVGbJeKreQe)" d="M7.2 14.5h9.6a.8.8 0 0 1 .8.8v.9a.8.8 0 0 1-.8.8H7.2a.8.8 0 0 1-.8-.8v-.9a.8.8 0 0 1 .8-.8" class="wm-a" />
+		<path stroke="#fff" stroke-linecap="round" stroke-opacity=".6" stroke-width=".45" d="M7.3 15h9.4" class="wm-shine" />
+	</g>
+</svg>

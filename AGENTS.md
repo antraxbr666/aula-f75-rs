@@ -505,22 +505,25 @@ src/
   stroke, white selection, key legends) are intentional; Mocha base is
   `#1e1e2e`, surface0 `#313244`.
 - Icon bytes are pre-rendered straight-alpha RGBA from
-  `assets/icon-source.png` (512x512, the app logo, content centered with ~4%
-  breathing room): `assets/icon-256.rgba` feeds the window icon and the tray,
+  `assets/icon-source.svg` (24x24 viewBox, the app logo, transparent
+  background): `assets/icon-256.rgba` feeds the window icon and the tray,
   `assets/icon-64.rgba` is published alongside it for small panels. `ksni`
   wants ARGB32, so `tray::to_argb()` rotates every pixel; egui wants
-  straight RGBA. Regenerate both from the source with ImageMagick:
+  straight RGBA. Render each size **natively from the SVG** (never downscale a
+  bitmap), because `rsvg-convert` is the renderer available here — there is no
+  `resvg`:
   ```bash
-  magick assets/icon-source.png -filter Lanczos -resize 256x256 \
-    -depth 8 rgba:assets/icon-256.rgba
-  magick assets/icon-source.png -filter Lanczos -resize 64x64 \
-    -depth 8 rgba:assets/icon-64.rgba
+  rsvg-convert -w 256 -h 256 assets/icon-source.svg -o /tmp/i256.png
+  rsvg-convert -w 64 -h 64 assets/icon-source.svg -o /tmp/i64.png
+  magick /tmp/i256.png -depth 8 rgba:assets/icon-256.rgba
+  magick /tmp/i64.png -depth 8 rgba:assets/icon-64.rgba
   ```
   Sizes must stay exact (`256*256*4 = 262144`, `64*64*4 = 16384` bytes).
-  For an SVG source the renderer here is `rsvg-convert` (there is no `resvg`).
   The tray publishes both pixmaps and lets the host pick (`icon_pixmap`);
   a 22 px panel downsamples the 256 one, which looks better than a pre-shrunk
-  64 in most hosts.
+  64 in most hosts. Colour note: the keyboard body is `#3a404c`, which sits
+  close to Mocha base `#1e1e2e` — the white keycaps and the blue spacebar
+  (`#3b82f6`) are what keep the silhouette readable on a dark panel.
 
 ### 10.2 Fonts and text sizes (read before writing UI strings)
 
