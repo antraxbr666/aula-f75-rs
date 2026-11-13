@@ -4,7 +4,9 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.27</b></p>
+<p align="center"><b>v0.1.28</b></p>
+
+![AULA F75 interface showing the keyboard and themes](assets/screenshot-aula-f75-rs.png)
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -84,8 +86,6 @@ aula-f75
 ```
 
 Vertical icon navbar on the left; each tab opens in the right panel. The keyboard drawing in the centre shows the **custom layer** (editor) with the real colours read from the hardware.
-
-![AULA F75 interface showing the keyboard and themes](assets/screenshot-aula-f75-rs.png)
 
 > 🖴 **Tray:** `aula-f75` is the normal desktop launch: it starts a resident StatusNotifierItem (quickshell, waybar etc.) and its window. Use `aula-f75 --start-minimized` for autostart with **only the icon**. The tray menu's first item is **Show** when the window is closed and **Hide** when it is open; it opens/focuses or closes only the GUI accordingly. **Quit** ends everything. **Left click = toggle:** opens the window when closed, closes it when open. The daemon runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
 >
