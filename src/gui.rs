@@ -1304,8 +1304,8 @@ impl GuiApp {
                 self.confirm_reset = true;
             }
         } else {
+            ui.colored_label(MOCHA.red, "Reset keyboard to factory?");
             ui.horizontal(|ui| {
-                ui.colored_label(MOCHA.red, "Reset keyboard to factory?");
                 if action(ui, true, "\u{F00C}", MOCHA.green, "yes").clicked() {
                     self.confirm_reset = false;
                     self.pending = true;
