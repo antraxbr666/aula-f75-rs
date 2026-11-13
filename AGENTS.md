@@ -598,13 +598,16 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
 - Emojis render monochrome through egui's fallback font — and since the
   Caskaydia covers none of `1F300-1F6FF`, prefer a Nerd codepoint (see above),
   never an emoji, for UI icons.
-- Themes tab: a `ScrollArea` list of `Button::image_and_text`, one 200x86
-  **preview texture per preset generated at runtime** (`theme_preview_image`:
-  the board miniature painted with `themes::colors`), so no image assets or
-  decoders exist and a preview can never drift from what is written. The
-  button is highlighted when `per_key == themes::colors(t)`: `surface1` +
-  green stroke when the table matches **and** `ACTIVE_EFFECT == 32` (stored
-  and lit), `surface0` when it matches but the firmware shows effect 1-31.
+- Themes tab: a `ScrollArea` with a `horizontal_wrapped` grid of **hand-drawn
+  cards** (`theme_card`: fixed 166x112, preview 148x64 on top and the name in
+  `Color32::WHITE` centred below — `Button::image_and_text` sizes itself by the
+  label, which made every card a different width). One 200x86 **preview
+  texture per preset is generated at runtime** (`theme_preview_image`: the
+  board miniature painted with `themes::colors`), so no image assets or
+  decoders exist and a preview can never drift from what is written. The card
+  is highlighted when `per_key == themes::colors(t)`: `surface1` + green
+  stroke when the table matches **and** `ACTIVE_EFFECT == 32` (stored and
+  lit), `surface0` when it matches but the firmware shows effect 1-31.
   Any hand-painted key breaks the match, so nothing is highlighted — that is
   correct, the firmware stores no theme name, only the table.
 - Board drawing (`gui.rs`): **key caps use their real width**, not one

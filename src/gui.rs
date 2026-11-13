@@ -341,6 +341,62 @@ fn apply_rgb(
     Ok(())
 }
 
+/// One theme card: preview on top, white name centred underneath, fixed size
+/// so every entry in the list lines up regardless of the theme's name length.
+fn theme_card(
+    ui: &mut egui::Ui,
+    tex: &egui::TextureHandle,
+    name: &str,
+    stored: bool,
+    active: bool,
+    enabled: bool,
+) -> egui::Response {
+    const CARD: Vec2 = Vec2::new(166.0, 112.0);
+    const PREVIEW: Vec2 = Vec2::new(148.0, 64.0);
+
+    let (rect, resp) = ui.allocate_exact_size(CARD, Sense::click());
+    let hovered = resp.hovered() && enabled;
+    let fill = if active {
+        MOCHA.surface1
+    } else if stored {
+        MOCHA.surface0
+    } else if hovered {
+        MOCHA.surface0.gamma_multiply(0.55)
+    } else {
+        MOCHA.crust
+    };
+    let fill = if enabled {
+        fill
+    } else {
+        fill.gamma_multiply(0.5)
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, 8.0, fill);
+    if active {
+        painter.rect_stroke(rect, 8.0, Stroke::new(1.5_f32, MOCHA.green));
+    }
+
+    let preview = Rect::from_center_size(
+        pos2(rect.center().x, rect.top() + 8.0 + PREVIEW.y / 2.0),
+        PREVIEW,
+    );
+    painter.image(
+        tex.id(),
+        preview,
+        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
+    painter.text(
+        pos2(rect.center().x, preview.bottom() + 16.0),
+        egui::Align2::CENTER_CENTER,
+        name,
+        egui::FontId::proportional(16.0),
+        Color32::WHITE,
+    );
+
+    resp
+}
+
 /// ---- GUI ----
 
 /// Sections reachable from the left icon navbar.
@@ -992,39 +1048,22 @@ impl GuiApp {
             .id_salt("theme-list")
             .max_height((ui.available_height() - 8.0).max(120.0))
             .show(ui, |ui| {
-                for ((tex, stored, active), name) in textures.iter().zip(themes::THEMES) {
-                    let mut button = egui::Button::image_and_text(
-                        egui::Image::from_texture(tex).fit_to_exact_size(egui::vec2(200.0, 86.0)),
-                        {
-                            let [r, g, b] = themes::signature_rgb(name);
-                            egui::RichText::new(*name)
-                                .size(17.0)
-                                .color(Color32::from_rgb(r, g, b))
-                        },
-                    );
-                    if *active {
-                        button = button
-                            .fill(MOCHA.surface1)
-                            .stroke(Stroke::new(1.5_f32, MOCHA.green));
-                    } else if *stored {
-                        // Stored in flash, but the firmware is showing a
-                        // built-in effect (1-31) instead of the custom layer.
-                        button = button.fill(MOCHA.surface0);
-                    }
-                    let resp = ui
-                        .add_enabled(!self.pending, button)
-                        .on_hover_text(if *active {
+                ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
+                ui.horizontal_wrapped(|ui| {
+                    for ((tex, stored, active), name) in textures.iter().zip(themes::THEMES) {
+                        let resp = theme_card(ui, tex, name, *stored, *active, !self.pending);
+                        let resp = resp.on_hover_text(if *active {
                             "stored and currently lit".to_string()
                         } else if *stored {
                             format!("stored in the keyboard — firmware is showing effect {effect}")
                         } else {
                             String::new()
                         });
-                    if resp.clicked() {
-                        self.apply_theme(name);
+                        if resp.clicked() {
+                            self.apply_theme(name);
+                        }
                     }
-                    ui.add_space(2.0);
-                }
+                });
             });
     }
 

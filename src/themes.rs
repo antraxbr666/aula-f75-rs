@@ -563,13 +563,6 @@ pub fn colors(name: &str) -> Vec<[u8; 3]> {
     out
 }
 
-/// A colour that identifies the theme (first gradient stop), for UI accents.
-pub fn signature_rgb(name: &str) -> [u8; 3] {
-    preset(name)
-        .and_then(|p| p.stops.first().map(|s| s.1))
-        .unwrap_or([0x58, 0x5B, 0x70]) // neutral for "off"
-}
-
 /// 378-byte per-key RGB block for a theme.
 pub fn block(name: &str) -> Result<Vec<u8>, String> {
     let cs = colors(name);
