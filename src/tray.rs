@@ -6,7 +6,9 @@
 //! compositor (niri `Mod+C`, the X button) kills only that child, so the icon
 //! stays and "Show" brings the window back.
 //!
-//! Icon: 64x64 RGBA pre-rendered from `assets/icon.svg` (see AGENTS.md).
+//! Icon: pre-rendered RGBA from `assets/icon-source.png` — 256x256 for the
+//! window and the tray, 64x64 published alongside it for small panels (see
+//! AGENTS.md §10.1 for the regeneration recipe).
 
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -14,33 +16,44 @@ use eframe::egui;
 
 use crate::daemon::Daemon;
 
-/// Pre-rendered 64x64 RGBA (straight alpha) from assets/icon.svg.
-static ICON_RGBA: &[u8] = include_bytes!("../assets/icon-64.rgba");
-const ICON_SIZE: i32 = 64;
+/// Pre-rendered RGBA (straight alpha) from assets/icon-source.png.
+static ICON_256: &[u8] = include_bytes!("../assets/icon-256.rgba");
+static ICON_64: &[u8] = include_bytes!("../assets/icon-64.rgba");
+const ICON_SIZE_LARGE: i32 = 256;
+const ICON_SIZE_SMALL: i32 = 64;
 
-/// Same bytes for the window icon (egui also wants straight RGBA).
+/// The app logo for the window icon (egui also wants straight RGBA).
 pub fn window_icon() -> egui::IconData {
     egui::IconData {
-        rgba: ICON_RGBA.to_vec(),
-        width: ICON_SIZE as u32,
-        height: ICON_SIZE as u32,
+        rgba: ICON_256.to_vec(),
+        width: ICON_SIZE_LARGE as u32,
+        height: ICON_SIZE_LARGE as u32,
     }
 }
 
 /// ksni wants ARGB32 (network byte order): rotate each pixel RGBA -> ARGB.
-fn tray_icon() -> ksni::Icon {
-    let mut data = ICON_RGBA.to_vec();
+fn to_argb(bytes: &[u8], size: i32) -> ksni::Icon {
+    let mut data = bytes.to_vec();
     for px in data.as_chunks_mut::<4>().0 {
         px.rotate_right(1);
     }
     ksni::Icon {
-        width: ICON_SIZE,
-        height: ICON_SIZE,
+        width: size,
+        height: size,
         data,
     }
 }
 
-static TRAY_ICON: LazyLock<ksni::Icon> = LazyLock::new(tray_icon);
+fn tray_icon_large() -> ksni::Icon {
+    to_argb(ICON_256, ICON_SIZE_LARGE)
+}
+
+fn tray_icon_small() -> ksni::Icon {
+    to_argb(ICON_64, ICON_SIZE_SMALL)
+}
+
+static TRAY_ICON_LARGE: LazyLock<ksni::Icon> = LazyLock::new(tray_icon_large);
+static TRAY_ICON_SMALL: LazyLock<ksni::Icon> = LazyLock::new(tray_icon_small);
 
 pub struct AulaTray {
     /// Shared with the reaper thread in `daemon::run`.
@@ -64,8 +77,9 @@ impl ksni::Tray for AulaTray {
         }
     }
 
+    /// Publish both sizes; the host picks the one that fits its panel.
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![TRAY_ICON.clone()]
+        vec![TRAY_ICON_SMALL.clone(), TRAY_ICON_LARGE.clone()]
     }
 
     /// Left click on the icon: open the window, or close it when it is

@@ -504,11 +504,23 @@ src/
   fails to compile. Colors still hardcoded in the drawing (orange remap
   stroke, white selection, key legends) are intentional; Mocha base is
   `#1e1e2e`, surface0 `#313244`.
-- Icon bytes are a
-  pre-rendered 64x64 RGBA (`assets/icon-64.rgba`, straight alpha for egui,
-  rotated to ARGB32 for ksni) — regenerate with `resvg --width 64 --height
-  64 assets/icon.svg /tmp/icon.png && magick /tmp/icon.png -depth 8
-  rgba:assets/icon-64.rgba`.
+- Icon bytes are pre-rendered straight-alpha RGBA from
+  `assets/icon-source.png` (512x512, the app logo, content centered with ~4%
+  breathing room): `assets/icon-256.rgba` feeds the window icon and the tray,
+  `assets/icon-64.rgba` is published alongside it for small panels. `ksni`
+  wants ARGB32, so `tray::to_argb()` rotates every pixel; egui wants
+  straight RGBA. Regenerate both from the source with ImageMagick:
+  ```bash
+  magick assets/icon-source.png -filter Lanczos -resize 256x256 \
+    -depth 8 rgba:assets/icon-256.rgba
+  magick assets/icon-source.png -filter Lanczos -resize 64x64 \
+    -depth 8 rgba:assets/icon-64.rgba
+  ```
+  Sizes must stay exact (`256*256*4 = 262144`, `64*64*4 = 16384` bytes).
+  For an SVG source the renderer here is `rsvg-convert` (there is no `resvg`).
+  The tray publishes both pixmaps and lets the host pick (`icon_pixmap`);
+  a 22 px panel downsamples the 256 one, which looks better than a pre-shrunk
+  64 in most hosts.
 
 ### 10.2 Fonts and text sizes (read before writing UI strings)
 
