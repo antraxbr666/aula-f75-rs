@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.22</b></p>
+<p align="center"><b>v0.1.23</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -61,6 +61,10 @@ git clone https://github.com/fredjunior54/aula-f75-rs.git
 cd aula-f75-rs
 cargo build --release        # → target/release/aula-f75
 ```
+
+### 📦 Release builds
+
+Every version tag (`vX.Y.Z`) publishes a **Linux x86_64** archive on [GitHub Releases](https://github.com/fredjunior54/aula-f75-rs/releases). The archive contains `aula-f75`, the udev rule, desktop launcher and app icon; verify it with the accompanying `SHA256SUMS` file. It needs a GNU/Linux host with compatible `glibc` and `libudev` (`systemd-libs` on Arch) plus the included udev rule for non-root HID access.
 
 ### 🐧 Linux: permissions without sudo
 

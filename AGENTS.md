@@ -792,4 +792,7 @@ Nothing to do in the GUI or the CLI: both read `CARGO_PKG_VERSION`
 4. `git status --short` — confirm every file of the iteration is staged.
 5. `git add` only those files → `git commit -m "<emoji> <type>: <subject>"` →
    `git push origin main`.
-6. Never `--force`, never `reset --hard`, never commit secrets.
+6. Create the matching annotated release tag (`git tag -a vX.Y.Z -m "vX.Y.Z"`) and
+   `git push origin vX.Y.Z`. The GitHub Actions release workflow validates the tag
+   against `Cargo.toml` and publishes the Linux x86_64 release assets.
+7. Never `--force`, never `reset --hard`, never commit secrets.
