@@ -37,7 +37,7 @@ impl Daemon {
                 return;
             }
         };
-        match Command::new(exe).arg("gui").spawn() {
+        match Command::new(exe).arg("--gui-child").spawn() {
             Ok(child) => self.child = Some(child),
             Err(e) => eprintln!("failed to launch the GUI: {e}"),
         }
@@ -74,7 +74,31 @@ impl Daemon {
 /// Run the tray daemon forever. `open_window` mirrors the old behavior of
 /// having the window up right after launch.
 pub fn run(open_window: bool) -> anyhow::Result<()> {
+    let listener = match ipc::bind_daemon() {
+        Ok(listener) => listener,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            // A running tray owns the daemon socket; make the new invocation
+            // behave like a launcher by asking it to show/focus its window.
+            let _ = ipc::request_daemon(ipc::SHOW);
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
     let state = Arc::new(Mutex::new(Daemon { child: None }));
+
+    // The daemon, unlike the short-lived GUI, owns this socket for its full
+    // lifetime. A second default invocation uses it instead of making a
+    // duplicate StatusNotifierItem.
+    {
+        let state = state.clone();
+        ipc::watch(listener, move |msg| {
+            if msg == ipc::SHOW {
+                if let Ok(mut daemon) = state.lock() {
+                    daemon.show();
+                }
+            }
+        });
+    }
 
     // The window is closed by the compositor, not by us: poll for its exit.
     {

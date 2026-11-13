@@ -28,8 +28,14 @@ use protocol::{led, COLORS, EFFECTS};
     about = "aula-f75-rs configuration tool (2.4G / Bluetooth)"
 )]
 struct Cli {
+    /// Start only the tray icon; open the window later from the tray menu.
+    #[arg(long)]
+    start_minimized: bool,
+    /// Internal daemon child mode. Kept out of the public CLI.
+    #[arg(long, hide = true)]
+    gui_child: bool,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -54,18 +60,6 @@ enum Command {
     Dump,
     /// Read the LED block and write it back unchanged (tests the write path)
     Selftest,
-    /// Launch the graphical interface
-    Gui,
-    /// Stay resident in the tray; the window is a child process (close-to-tray).
-    /// Use it for compositor/panel autostart: the icon shows up at login and
-    /// the window opens from the tray menu.
-    Tray {
-        /// Start with the tray icon only (no window) — the usual choice for
-        /// niri/quickshell/waybar autostart; open the window later via the
-        /// tray menu "Show"
-        #[arg(long)]
-        no_window: bool,
-    },
     /// List key names usable with `key-color`
     Keys,
     /// Paint individual keys: KEY=RRGGBB (e.g. `key-color w=ff0000 a=00ff00`)
@@ -136,19 +130,24 @@ enum MacroCmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // The tray daemon and the GUI never talk to the keyboard themselves, so
-    // they are dispatched before the HID stack is even initialized (the
-    // daemon must not open the device — only the GUI process owns it).
-    match &cli.command {
-        Command::Tray { no_window } => return daemon::run(!no_window),
-        Command::Gui => return gui::run(),
-        _ => {}
+    // The daemon and GUI never touch HID themselves: dispatch them before
+    // initializing the stack so the GUI remains the sole HID owner.
+    if cli.gui_child {
+        if cli.start_minimized || cli.command.is_some() {
+            bail!("--gui-child cannot be combined with other arguments");
+        }
+        return gui::run();
+    }
+    let Some(command) = cli.command else {
+        return daemon::run(!cli.start_minimized);
+    };
+    if cli.start_minimized {
+        bail!("--start-minimized is only valid without a subcommand");
     }
 
     let api = HidApi::new().context("failed to initialize HID")?;
 
-    match cli.command {
-        Command::Tray { .. } | Command::Gui => unreachable!("handled before HID init"),
+    match command {
         Command::List => device::list(&api),
         Command::Info => info(&api)?,
         Command::Effect { number } => {

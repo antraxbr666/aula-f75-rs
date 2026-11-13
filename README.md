@@ -4,7 +4,7 @@
 
 <h1 align="center">aula-f75-rs</h1>
 
-<p align="center"><b>v0.1.17</b></p>
+<p align="center"><b>v0.1.18</b></p>
 
 <p align="center">
   🦀 <em>A Rust CLI + GUI for the AULA F75 mechanical keyboard on Linux x86_64</em> — a complete, independent replacement for the official
@@ -76,25 +76,25 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ## 🖥️ GUI
 
 ```bash
-aula-f75 gui
+aula-f75
 ```
 
 Vertical icon navbar on the left; each tab opens in the right panel. The keyboard drawing in the centre shows the **custom layer** (editor) with the real colours read from the hardware.
 
-> 🖴 **Tray:** resident icon (StatusNotifierItem; shows up in quickshell, waybar etc.) with a **Show** menu (opens or focuses the window) and **Quit** (ends everything). **Left click on the icon = toggle:** opens the window when closed, closes it when open. The icon lives in the `aula-f75 tray` daemon, which runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
+> 🖴 **Tray:** the default launch starts a resident StatusNotifierItem (quickshell, waybar etc.) and its window. The tray has a **Show** menu (opens or focuses the window) and **Quit** (ends everything). **Left click = toggle:** opens the window when closed, closes it when open. The daemon runs the window as a **child process** — closing the window (X, niri `Mod+C`) closes **only the window**, the icon stays and **Show** brings it back.
 >
 > 🪟 **Window app ID:** `aula-f75-rs` — use it in niri window rules, e.g. `match app-id="aula-f75-rs"`
 
 ```bash
-# resident in autostart (niri/quickshell/waybar): icon only, window from the menu
-aula-f75 tray --no-window
-# with the window open at startup
-aula-f75 tray
+# default: resident tray with the window open
+aula-f75
+# autostart: resident tray only; open the window later from the menu
+aula-f75 --start-minimized
 ```
 
 ```kdl
 // ~/.config/niri/config.kdl
-spawn-at-startup "aula-f75" "tray" "--no-window"
+spawn-at-startup "aula-f75" "--start-minimized"
 ```
 
 | Icon | Tab | What it does |

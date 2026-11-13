@@ -443,8 +443,8 @@ src/
   gui.rs       egui app: worker thread + mpsc jobs, sections, board drawing
   fonts.rs     CaskaydiaCove Nerd Font embedded (primary family + text sizes)
   tray.rs      ksni SNI tray: Show/Quit menu, embedded icon (daemon side)
-  daemon.rs    `aula-f75 tray`: supervises the GUI child + reaper thread
-  ipc.rs       unix control socket (focus / single-instance lock)
+  daemon.rs    default launcher: supervises the GUI child + reaper thread
+  ipc.rs       unix control sockets (GUI focus/toggle + tray single-instance lock)
 ```
 
 ### 10.1 GUI architecture rules (keep these)
@@ -476,27 +476,27 @@ src/
   remap in the selected layer get an orange stroke; selection = white
   stroke; Ctrl-click adds to selection.
 - **Tray (ksni/SNI, `src/tray.rs` + `src/daemon.rs`)**: resident icon with
-  Show/Quit menu, hosted by the **`aula-f75 tray` daemon**, not by the GUI
+  Show/Quit menu, hosted by the default **`aula-f75` daemon**, not by the GUI
   process. This is the close-to-tray model Wayland allows: close-to-tray via
   `CancelClose` + `Visible(false)` was tried and DOES NOT work (`winit`'s
   `set_visible` is a no-op on Wayland; commit `8cd62c6`, reverted in
   `0179265`) — do not resurrect it. Instead the daemon runs the window as a
-  **child process** (`aula-f75 gui`): the compositor closing the window (X,
+  **child process** (internal `--gui-child` mode): the compositor closing the window (X,
   niri Mod+C) kills only that child, the icon stays, and "Show" relaunches
   it. Windows outlive the daemon (an orphaned GUI keeps working, just
   without a tray).
 - **Tray/GUI wiring**: the GUI **owns** a control socket
-  (`$XDG_RUNTIME_DIR/aula-f75-<user>.sock`, `src/ipc.rs`, stdlib only) and
-  `ipc::bind()` doubles as the single-instance lock — a second `aula-f75 gui`
-  gets `AddrInUse`, sends `focus` to the live window and exits 0. Stale
-  sockets left by a killed GUI are removed at bind time. The daemon only ever
-  *connects* to it: `request_focus()` returns true when a window is alive
-  (then it just focuses), false when it must spawn one. Messages are one
-  `focus` line per connection; the watcher thread calls
+  (`$XDG_RUNTIME_DIR/aula-f75-gui-<user>.sock`, `src/ipc.rs`, stdlib only)
+  for focus/toggle messages. The daemon owns a separate
+  `aula-f75-tray-<user>.sock` lock for its full lifetime: a second `aula-f75`
+  asks the existing daemon to show/focus the window instead of creating a
+  duplicate tray icon. Stale sockets left by a killed process are removed at
+  bind time. Messages are one line per connection; the GUI watcher calls
   `Visible(true)`+`Focus`+`request_repaint` on the cloned `egui::Context`.
 - **No HID in the daemon**: only the GUI process touches the device (keeps
-  §11.1 "never two processes on the device" honest). `Tray`/`Gui` are
-  dispatched in `main()` **before** `HidApi::new()` for that reason.
+  §11.1 "never two processes on the device" honest). The default daemon and
+  hidden GUI-child mode are dispatched in `main()` **before** `HidApi::new()`
+  for that reason.
   Daemon crash detection is a 500 ms `try_wait` reaper thread (the window is
   closed by the compositor, not by us). "Quit" kills the child and exits the
   process (the SNI name dies with the D-Bus connection). ksni 0.3.7 blocking
@@ -663,11 +663,11 @@ The app ships **CaskaydiaCove Nerd Font Mono** compiled into the binary
 8. `#` starts a comment in fish and bash too — always quote it in args:
    `cargo run -- live '#ff0000'`.
 9. Baseline capture must happen ONLY at verified factory state (§6.6).
-10. **Rebuilding while `aula-f75 tray` runs breaks its "Show"**: the daemon
+10. **Rebuilding while `aula-f75` runs breaks its "Show"**: the daemon
     resolves `std::env::current_exe()` from `/proc/self/exe`, which reports
     `.../aula-f75 (deleted)` after cargo replaces the binary, so spawning the
     GUI fails with `os error 2`. Restart the daemon after every rebuild
-    (`pkill -f 'target/debug/aula-f75 tray'` — quote it so the pattern does
+    (`pkill -f 'target/debug/aula-f75'` — quote it so the pattern does
     not match your own shell).
 
 ---
@@ -695,13 +695,13 @@ aula-f75 macro set 0 name "h e l l o enter"
 aula-f75 macro del 0
 aula-f75 live rainbow 10               # stream animation ~14 fps
 aula-f75 live '#ff0000'                # solid color (quote # in shells)
-aula-f75 gui                          # window only (no tray); 2nd run just focuses
-aula-f75 tray                         # resident tray + window (close-to-tray)
-aula-f75 tray --no-window             # resident tray only (autostart); window via "Show"
+aula-f75                              # resident tray + window (default)
+aula-f75 --start-minimized            # resident tray only (autostart); window via "Show"
 ```
 
-Tray workflow: autostart with the **icon only** (`aula-f75 tray --no-window`,
-e.g. `spawn-at-startup "aula-f75" "tray" "--no-window"` in
+Tray workflow: `aula-f75` opens the **tray and window** by default. Autostart
+with the **icon only** via `aula-f75 --start-minimized` (e.g.
+`spawn-at-startup "aula-f75" "--start-minimized"` in
 `~/.config/niri/config.kdl`); then `Mod+C` (`close-window`) closes the window
 and leaves the icon; menu **Show** reopens it, **Quit** kills both.
 
