@@ -671,4 +671,52 @@ aula-f75 remap 0 --raw            # byte-compare vs factory::BASE if unsure
   overrides needed. (History predating the Linux migration was committed as
   `fredc <fredc@local>` on Windows.)
 - Push to `origin/main`. Commit messages in English, imperative, one topic
-  per commit.
+  per commit, **prefixed with an emoji** that matches the change (see §14.1).
+
+### 14.1 Version bump — every iteration, no exceptions
+
+The owner's rule: **any** change to the sources or docs, however small (a
+README paragraph, a comment, an asset, a comment-only tweak), ends with a
+version bump — in the same commit as the change. No bump, no commit.
+
+**Bump semantics (pre-1.0):**
+
+| Kind of change | Bump | Example |
+|---|---|---|
+| fix, docs, README, comment, asset, udev rule, tweak | **patch** (the default) | `0.1.0` → `0.1.1` |
+| new user-visible behaviour (CLI subcommand, GUI section/option, protocol block) | **minor** | `0.1.x` → `0.2.0` |
+| breaking CLI/format change, or the owner asks for it | **major** | only on request |
+
+**Commit prefix** — Conventional Commits, English, imperative, emoji first:
+
+| Emoji | Type | When |
+|---|---|---|
+| ✨ | `feat:` | new behaviour |
+| 🐛 | `fix:` | bug fix |
+| 📝 | `docs:` | docs/README only |
+| ♻️ | `refactor:` | no behaviour change |
+| 🔧 | `chore:` | tooling, assets, version-only |
+
+Subject line ≤ 72 chars; body only to explain the *why*.
+
+**The three places that carry the version** (the third is the one that gets
+forgotten):
+
+1. `Cargo.toml` → `version` — source of truth.
+2. `Cargo.lock` → refreshed by any `cargo build`/`cargo check`; **never edit by
+   hand**.
+3. `README.md` line 7 → `<p align="center"><b>vX.Y.Z</b></p>` — **hardcoded**,
+   must match `Cargo.toml` or the page lies.
+
+Nothing to do in the GUI or the CLI: both read `CARGO_PKG_VERSION`
+(`env!`/clap), so they follow `Cargo.toml` automatically.
+
+**Iteration checklist:**
+
+1. Make the change.
+2. `cargo fmt` + `cargo build` (+ `cargo clippy` when touching Rust).
+3. Bump `Cargo.toml` → update `README.md:7` → `cargo build` (lock).
+4. `git status --short` — confirm every file of the iteration is staged.
+5. `git add` only those files → `git commit -m "<emoji> <type>: <subject>"` →
+   `git push origin main`.
+6. Never `--force`, never `reset --hard`, never commit secrets.
