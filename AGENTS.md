@@ -679,13 +679,14 @@ The owner's rule: **any** change to the sources or docs, however small (a
 README paragraph, a comment, an asset, a comment-only tweak), ends with a
 version bump — in the same commit as the change. No bump, no commit.
 
-**Bump semantics (pre-1.0):**
+**Bump semantics (pre-1.0):** the automated bump is **patch only**. Minor
+and major are the owner's call — never take them on your own initiative.
 
 | Kind of change | Bump | Example |
 |---|---|---|
-| fix, docs, README, comment, asset, udev rule, tweak | **patch** (the default) | `0.1.0` → `0.1.1` |
-| new user-visible behaviour (CLI subcommand, GUI section/option, protocol block) | **minor** | `0.1.x` → `0.2.0` |
-| breaking CLI/format change, or the owner asks for it | **major** | only on request |
+| anything the agent does — fix, docs, README, comment, asset, udev rule, tweak, **even new user-visible behaviour** | **patch** | `0.1.0` → `0.1.1` |
+| new behaviour / new feature milestone | **minor** — only when the owner asks | `0.1.x` → `0.2.0` |
+| breaking CLI/format change | **major** — only when the owner asks | `0.x` → `1.0.0` |
 
 **Commit prefix** — Conventional Commits, English, imperative, emoji first:
 
